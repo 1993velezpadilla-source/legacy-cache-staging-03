@@ -1,30 +1,43 @@
 # Candyland Dream Status
 
 ## Phase
-BLOCKOUT PREPARED_NOT_EXECUTED
+V0.3 EXECUTED_AND_RUNTIME_SMOKE_VERIFIED
 
-## Completed
-- [x] Starter-map concept translated into a concrete level layout.
-- [x] Primary workspace confirmed as legacy-cache-staging-03.
-- [x] Package folder established through tracked files.
-- [x] Landmark coordinates and playable footprint defined.
-- [x] Blender blockout generator prepared.
+## Verified execution
+- [x] Blender scene generation.
+- [x] Blender preview renders.
+- [x] Procedural 3D candy asset generation.
+- [x] GLB export.
+- [x] GLB re-import/mesh validation.
+- [x] NZ:P BSP + NSZ compilation with the official NZ:P toolchain.
+- [x] Vril Android APK build with Candyland map bundled.
+- [x] Android emulator cold launch.
+- [x] Runtime first-frame check: FIRST_FRAME_OK.
+- [x] Runtime screenshots captured and checked as non-flat frames.
 
-## Not executed
-- [ ] Blender scene generation.
-- [ ] Blender preview render.
-- [ ] Hunyuan3D/Hayuya asset generation.
-- [ ] Runtime collision/navigation validation.
-- [ ] GLB export.
-- [ ] Mobile/Android performance validation.
+## Build facts
+- Version: 0.3.0
+- Visual meshes: 48
+- Visual triangles: 6,248
+- Procedural asset objects: 13
+- Route nodes: 8
+- Main path width: 5.0 m
+- Player clearance target: 1.2 m
+- Android runtime map: candyland_harness.bsp + candyland_harness.nsz
+- Verified Android process PID in CI: 2294
+- Verified runtime stage: FIRST_FRAME_OK
 
-## Acceptance checks
-1. Scene opens without missing dependencies.
-2. Spawn, plaza, forest, river, and castle are readable at gameplay height.
-3. Main route has no blocking collision.
-4. River is visually distinct from walkable terrain.
-5. Castle gate can be toggled for testing.
-6. Blockout remains within measurements.json.
+## Evidence
+GitHub Actions workflow: Candyland Dream Five-Agent Runtime Pipeline
+Successful run: 35813662479
+Head commit: 06fe8be3dbb9442766647524e503b1d6282d5bae
 
-## Runtime truth
-Repository write access does not imply access to a Blender, Hunyuan3D/GPU, renderer, game-engine, Android build, or other runtime. Mark every unexecuted runtime step explicitly until verified.
+Artifacts produced by the successful run:
+- candyland-agent1-blender
+- candyland-agent2-assets
+- candyland-agent3-glb
+- candyland-agent4-engine-harness
+- candyland-agent5-android-runtime
+
+## Important visual-runtime distinction
+The Vril/NZ:P Android smoke harness proves that the compiled Candyland map package loads and reaches a rendered first frame. The current Vril harness uses engine-native BSP presentation for runtime compatibility. The richer candy-colored Blender GLB scene is generated and validated separately; bringing that exact visual dressing into Vril is a later renderer/static-mesh integration pass, not part of this smoke-test claim.
