@@ -13,7 +13,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: candyland-five-agent-${ github.ref }}
+  group: candyland-five-agent-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -178,8 +178,8 @@ jobs:
         working-directory: engine-ref
         env:
           XZIEL_EXTRA_MAP_NAME: candyland_harness
-          XZIEL_EXTRA_MAP_BSP: ${ github.workspace }}/candyland/engine/candyland_harness.bsp
-          XZIEL_EXTRA_MAP_NSZ: ${ github.workspace }}/candyland/engine/candyland_harness.nsz
+          XZIEL_EXTRA_MAP_BSP: ${{ github.workspace }}/candyland/engine/candyland_harness.bsp
+          XZIEL_EXTRA_MAP_NSZ: ${{ github.workspace }}/candyland/engine/candyland_harness.nsz
         run: |
           set -euo pipefail
           bash scripts/prepare_android.sh
@@ -196,7 +196,7 @@ jobs:
         id: smoke
         continue-on-error: true
         env:
-          ANDROID_AVD_HOME: ${ runner.temp }}/xziel-candyland-avd
+          ANDROID_AVD_HOME: ${{ runner.temp }}/xziel-candyland-avd
         run: |
           set -euo pipefail
           mkdir -p "$ANDROID_AVD_HOME" dist
