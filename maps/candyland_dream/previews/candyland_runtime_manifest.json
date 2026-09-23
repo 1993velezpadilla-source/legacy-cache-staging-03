@@ -1,0 +1,17 @@
+{
+  "map": "Candyland Dream",
+  "version": "0.1.0",
+  "status": "BLOCKOUT_PREPARED_NOT_EXECUTED",
+  "footprint_m": {"width": 96, "depth": 72},
+  "landmarks": {
+    "spawn": {"x": -34, "y": -25, "z": 0},
+    "candy_plaza": {"x": -12, "y": -10, "z": 0},
+    "lollipop_forest": {"x": -28, "y": 18, "z": 0},
+    "chocolate_river": {"x": 18, "y": 5, "z": -0.5},
+    "cupcake_castle": {"x": 28, "y": 24, "z": 0}
+  },
+  "gameplay_route": ["spawn", "candy_plaza", "lollipop_forest", "chocolate_river", "cupcake_castle"],
+  "runtime_layers": ["visual", "walkable", "collision", "navigation", "gameplay_triggers"],
+  "source_measurements_sha256": "9c29b98a68285fa1d21ac9f0e9b03e052c89f006170394d4cea6d894f7adef39",
+  "execution_note": "Manifest structure is prepared; the exporter was not executed because this environment cannot fetch repository files into the local container runtime."
+}
