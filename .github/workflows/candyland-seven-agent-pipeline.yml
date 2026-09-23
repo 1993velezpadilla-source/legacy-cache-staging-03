@@ -8,6 +8,7 @@ on:
       - ".github/workflows/candyland-seven-agent-pipeline.yml"
       - "maps/candyland_dream/blender/**"
       - "maps/candyland_dream/runtime/**"
+      - "maps/candyland_dream/scanner/**"
 
 permissions:
   contents: read
@@ -24,21 +25,60 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
+      - name: Prepare CandyAssetScanner reference
+        run: |
+          set -euo pipefail
+          mkdir -p candyland/scanner
+          base64 -d maps/candyland_dream/scanner/references/approved_overview.jpg.b64 > candyland/scanner/reference.jpg
+          test -s candyland/scanner/reference.jpg
+      - name: Install scanner CPU dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pillow opencv-python-headless numpy
+          # Optional AI detector. Failure is allowed because scan_reference.py has
+          # a deterministic approved-reference fallback.
+          python3 -m pip install --quiet transformers safetensors accelerate || true
+      - name: Scan approved concept for assets
+        env:
+          CANDY_USE_AI_DETECTOR: "1"
+        run: |
+          set -euo pipefail
+          python3 maps/candyland_dream/scanner/scan_reference.py \
+            --reference-b64 maps/candyland_dream/scanner/references/approved_overview.jpg.b64 \
+            --seed maps/candyland_dream/scanner/reference_seed_inventory.json \
+            --out candyland/scanner
+          test -s candyland/scanner/detections.json
+          test -s candyland/scanner/asset_queue.json
+          test -s candyland/scanner/detection_preview.png
       - name: Install Blender runtime
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq blender python3-numpy xvfb libegl1 libgl1-mesa-dri libglx-mesa0
           blender --version
+      - name: Build scanner 3D asset pack
+        env:
+          CANDY_SCANNER_QUEUE: candyland/scanner/asset_queue.json
+          CANDY_SCANNER_3D_OUT: candyland/scanner3d
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p candyland/scanner3d
+          xvfb-run -a -s "-screen 0 1600x1000x24" blender --background --python maps/candyland_dream/blender/scanner_asset_factory.py 2>&1 | tee candyland/scanner3d/factory.log
+          test -s candyland/scanner3d/candy_scanner_assets.blend
+          test -s candyland/scanner3d/candy_scanner_assets.glb
+          test -s candyland/scanner3d/scanner_asset_preview.png
+          test -s candyland/scanner3d/scanner_asset_factory_report.json
       - name: Execute Candyland world build
         env:
           CANDY_OUT: candyland/out
+          CANDY_SCANNER_QUEUE: candyland/scanner/asset_queue.json
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
           set -euo pipefail
           mkdir -p candyland/out
-          xvfb-run -a -s "-screen 0 1600x1000x24" blender --background --python maps/candyland_dream/blender/build_candyland_v06.py 2>&1 | tee candyland/out/blender.log
-          for f in candyland_dream_v03.blend candyland_dream_v03.glb candy_props_v03.glb candyland_iso.png candyland_spawn_view.png candyland_castle_view.png candyland_gloss_closeup.png blender_report.json style_report.json; do
+          xvfb-run -a -s "-screen 0 1600x1000x24" blender --background --python maps/candyland_dream/blender/build_candyland_v07.py 2>&1 | tee candyland/out/blender.log
+          for f in candyland_dream_v03.blend candyland_dream_v03.glb candy_props_v03.glb candyland_iso.png candyland_spawn_view.png candyland_castle_view.png candyland_gloss_closeup.png candyland_scanner_integration.png blender_report.json style_report.json; do
             test -s "candyland/out/$f"
           done
           python3 - <<'PY'
@@ -47,14 +87,22 @@ jobs:
           assert r["status"]=="BLENDER_EXECUTED", r
           assert r["visual_meshes"] >= 30, r
           assert r["visual_triangles"] > 1000, r
-          assert r["version"]=="0.6.0", r
-          assert r["vision_pass"]=="GLOSS_AND_GIRLY_REAL_MAP_PASS", r
+          assert r["version"]=="0.7.0", r
+          assert r["vision_pass"]=="REALISM_AND_SCANNER_INTEGRATION", r
           print("WORLD_QA_OK", r)
           PY
       - uses: actions/upload-artifact@v4
         with:
           name: candyland-agent1-world
           path: candyland/out/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent1-scanner
+          path: |
+            candyland/scanner/
+            candyland/scanner3d/
           if-no-files-found: error
           retention-days: 14
 
