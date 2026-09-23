@@ -243,6 +243,115 @@ for o in bpy.context.scene.objects:
     if any(k in n for k in ("market","castle_gate","spawn_sign","candy_cart","gingerbread_shop")):
         add_bevel(o,.10,3)
 
+
+# ---------------------------------------------------------------------------
+# v0.6.1 density + finish pass after inspecting the real rendered map.
+# ---------------------------------------------------------------------------
+
+# Remove the old disconnected cookie-path disks from beauty/export; the glossy
+# continuous route now carries navigation visually.
+for o in bpy.context.scene.objects:
+    if o.name.startswith("CookiePath_"):
+        o.hide_render=True
+
+# Smooth organic/candy meshes. This is a major visual upgrade over flat facets.
+for o in bpy.context.scene.objects:
+    if o.type=="MESH" and len(o.data.polygons) > 18:
+        n=o.name.lower()
+        if not any(k in n for k in ("ground","road","counter","board","blocker","body","crate","bin")):
+            for p in o.data.polygons:
+                p.use_smooth=True
+
+def make_strawberry(name,loc,scale=1.0):
+    x,y,z=loc
+    berry=sphere(name+"_Berry",(x,y,z),1.0*scale,CHERRY_GLOSS,PROPS,segments=28,scale=(.86,.78,1.12))
+    # tiny cream/gold sugar seeds
+    seeds=[]
+    for j,a in enumerate((0.25,1.15,2.10,3.10,4.05,5.00)):
+        sx=x+math.cos(a)*.62*scale
+        sy=y-.69*scale
+        sz=z+.18*scale+math.sin(a)*.52*scale
+        s=sphere(name+f"_Seed_{j}",(sx,sy,sz),.07*scale,GOLD_PREMIUM,PROPS,segments=10,scale=(.65,.35,1.0))
+        s["catalog_skip"]=True; seeds.append(s)
+    leaves=[]
+    for j,a in enumerate((0,1.25,2.5,3.75,5.0)):
+        leaf=cone(name+f"_Leaf_{j}",(x+math.cos(a)*.32*scale,y+math.sin(a)*.22*scale,z+1.04*scale),
+                  .28*scale,.02,.66*scale,MINT_GLOSS,PROPS,vertices=8,rot=(math.radians(70),0,a))
+        leaf["catalog_skip"]=True; leaves.append(leaf)
+    return berry
+
+def make_cotton_tree(name,loc,scale=1.0):
+    x,y=loc
+    trunk=cyl(name+"_Trunk",(x,y,2.0*scale),.28*scale,4.0*scale,GOLD_PREMIUM,PROPS,vertices=18)
+    trunk["catalog_skip"]=True
+    clouds=[]
+    for j,(dx,dy,dz,r) in enumerate([
+        (0,0,4.8,1.65),(-1.15,.15,4.55,1.15),(1.15,.12,4.6,1.20),
+        (-.55,-.15,5.55,1.05),(.65,-.12,5.55,1.05)
+    ]):
+        c=sphere(name+f"_Cloud_{j}",(x+dx*scale,y+dy*scale,dz*scale),r*scale,
+                 BLUSH_GLOSS if j%2==0 else PEARL_FROST,PROPS,segments=24,scale=(1.05,.86,.82))
+        clouds.append(c)
+    return join_objects(name,clouds,PROPS)
+
+# Dense premium landscaping around the areas the beauty cameras actually see.
+for i,(x,y,s) in enumerate([
+    (-23,-12,.90),(-17,-7,.70),(-7,-13,.86),(-4,-5,.72),
+    (19,18,.78),(24,16,.92),(34,18,.80),(37,25,.92),
+    (-35,17,.72),(-30,29,.85),(-19,20,.74)
+]):
+    make_strawberry(f"V061_Strawberry_{i}",(x,y,1.05*s),s)
+
+for i,(x,y,s) in enumerate([
+    (-41,5,.85),(-36,10,.72),(-23,13,.78),(-16,18,.72),
+    (12,21,.70),(17,27,.72),(39,27,.78),(42,13,.72)
+]):
+    make_cotton_tree(f"V061_CottonTree_{i}",(x,y),s)
+
+# Cherry landscaping is cheap geometry but adds the strong cherry-red contrast
+# visible in the approved reference.
+for i,(x,y,z,s) in enumerate([
+    (-28,-18,1.0,.70),(-18,-12,1.0,.58),(-8,-8,1.0,.62),
+    (21,13,1.0,.58),(26,19,1.0,.68),(32,21,1.0,.62),(36,15,1.0,.56),
+    (-30,20,1.0,.55),(-22,27,1.0,.58)
+]):
+    cherry=sphere(f"V061_Cherry_{i}",(x,y,z),s,CHERRY_GLOSS,PROPS,segments=24)
+    stem=cyl(f"V061_CherryStem_{i}",(x+.18*s,y,z+.95*s),.055*s,1.15*s,GOLD_PREMIUM,PROPS,vertices=10,rot=(0,math.radians(-18),0))
+    stem["catalog_skip"]=True
+
+# Pink/white striped awning overlays make the plaza visually coherent.
+for i,(x,y) in enumerate([(-19,-15),(-14,-17),(-8,-16),(-4,-12)]):
+    for k in range(7):
+        sx=x-2.25+k*.75
+        matl=BLUSH_GLOSS if k%2==0 else PEARL_FROST
+        slat=cube(f"V061_AwningStripe_{i}_{k}",(sx,y-1.50,3.43),(.34,.18,.30),matl,PROPS)
+        slat["catalog_skip"]=True
+    bow(f"V061_StallBow_{i}",(x,y-1.72,3.72),.42,BLUSH_GLOSS)
+
+# Castle: icing rails, cherry finials and heart windows break up the primitive
+# cylinder/cone silhouette and pull it toward the approved concept.
+for j,z in enumerate((3.0,5.4,7.5)):
+    ring=torus(f"V061_CastleIcingRing_{j}",(28,24,z),3.42 if j<2 else 3.0,.16,PEARL_FROST,PROPS)
+    ring["catalog_skip"]=True
+for j,(x,z) in enumerate(((24.8,3.2),(28,4.2),(31.2,3.2),(28,7.0))):
+    heart(f"V061_CastleWindow_{j}",(x,18.04,z),.48 if j<3 else .62,
+          HEART_EMISSIVE,rot=(math.radians(90),0,0))
+for j,(x,y,z) in enumerate([
+    (22,19,11.2),(34,19,11.2),(22,29,13.2),(34,29,13.2),(28,24,18.1)
+]):
+    sphere(f"V061_CastleCherry_{j}",(x,y,z),.50 if j<4 else .68,CHERRY_GLOSS,PROPS,segments=24)
+
+# Add frosting dollops and hearts along the main plaza/castle approach.
+for i,(x,y) in enumerate([(-10,-5),(-7,-1),(-2,1),(4,2),(10,3),(15,6),(20,11),(24,16)]):
+    dollop=cone(f"V061_FrostDollop_{i}",(x,y,1.0),.85,.08,1.8,PEARL_FROST,PROPS,vertices=28)
+    add_bevel(dollop,.09,3)
+    heart(f"V061_PathHeart_{i}",(x+.9,y,.55),.28,HEART_EMISSIVE,rot=(0,0,0))
+
+# Make the large world base visibly pink instead of neutral.
+ground=bpy.data.objects.get("Candyland_Ground")
+if ground and ground.type=="MESH":
+    ground.data.materials.clear(); ground.data.materials.append(BLUSH_GLOSS)
+
 # ---------------------------------------------------------------------------
 # Dreamy real-render lighting / glow.
 # ---------------------------------------------------------------------------
