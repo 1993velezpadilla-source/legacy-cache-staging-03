@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "job_id": "felix-ASSET-001",
+  "owner": "Felix",
+  "title": "Asset title",
+  "geometry_input": "hayuya/assets/ASSET/front.png",
+  "reference_dir": "",
+  "detail_dir": "",
+  "profile": "monster",
+  "mode": "auto",
+  "portable_target": "auto",
+  "gpu_vram": 24,
+  "backends": "triposg,trellis2,trellis,instantmesh,triposr"
+}
