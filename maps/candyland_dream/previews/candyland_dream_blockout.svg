@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700">
+<rect width="1200" height="700" fill="#fff0fa"/>
+<text x="40" y="55" font-family="sans-serif" font-size="34" font-weight="700" fill="#7b2b83">CANDYLAND DREAM — STARTER MAP</text>
+<text x="42" y="85" font-family="sans-serif" font-size="16" fill="#5d4b60">v0.1 blockout / playable flow preview</text>
+<rect x="55" y="115" width="1090" height="520" rx="35" fill="#ffd9ee" stroke="#8c4f9e" stroke-width="4"/>
+<path d="M150 545 C250 500 300 450 380 430 C470 405 500 350 560 330 C650 300 700 240 790 220 C890 195 945 155 1030 150" fill="none" stroke="#ff6bb5" stroke-width="48" stroke-linecap="round"/>
+<path d="M150 545 C250 500 300 450 380 430 C470 405 500 350 560 330 C650 300 700 240 790 220 C890 195 945 155 1030 150" fill="none" stroke="#ffe55c" stroke-width="30" stroke-linecap="round" stroke-dasharray="70 18"/>
+<circle cx="150" cy="545" r="42" fill="#ff4f8b"/><text x="105" y="610" font-family="sans-serif" font-size="20" font-weight="700">SPAWN</text>
+<circle cx="380" cy="430" r="68" fill="#fff2b3" stroke="#ff9f3f" stroke-width="5"/><text x="310" y="435" font-family="sans-serif" font-size="20" font-weight="700">CANDY PLAZA</text>
+<g fill="#55d66b" stroke="#248a3b" stroke-width="4">
+<circle cx="250" cy="300" r="30"/><circle cx="315" cy="260" r="34"/><circle cx="375" cy="285" r="28"/><circle cx="445" cy="245" r="35"/><circle cx="500" cy="275" r="30"/>
+</g>
+<text x="265" y="200" font-family="sans-serif" font-size="24" font-weight="700">LOLLIPOP FOREST</text>
+<rect x="610" y="300" width="180" height="100" rx="35" fill="#6b321e" stroke="#401b0d" stroke-width="5"/>
+<text x="635" y="355" font-family="sans-serif" font-size="21" font-weight="700" fill="white">CHOCOLATE</text><text x="660" y="382" font-family="sans-serif" font-size="21" font-weight="700" fill="white">RIVER</text>
+<g fill="#fff" stroke="#e8c9e8" stroke-width="4"><ellipse cx="635" cy="350" rx="22" ry="12"/><ellipse cx="685" cy="365" rx="22" ry="12"/><ellipse cx="735" cy="345" rx="22" ry="12"/></g>
+<path d="M920 285 L980 180 L1040 285 Z" fill="#b56bff" stroke="#7038a8" stroke-width="6"/>
+<rect x="930" y="270" width="100" height="100" rx="20" fill="#f6d6ff" stroke="#7038a8" stroke-width="6"/>
+<circle cx="980" cy="180" r="28" fill="#ff7ac8"/>
+<text x="875" y="420" font-family="sans-serif" font-size="24" font-weight="700">CUPCAKE CASTLE</text>
+<text x="70" y="675" font-family="sans-serif" font-size="15" fill="#5d4b60">Readable route • modular landmarks • expansion-ready edges • runtime-neutral blockout</text>
+</svg>
