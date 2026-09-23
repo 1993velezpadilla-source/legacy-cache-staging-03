@@ -58,13 +58,20 @@ def detect_grounding_dino(image:Image.Image, device="cpu"):
     inputs=processor(images=image,text=text,return_tensors="pt").to(device)
     with torch.no_grad():
         outputs=model(**inputs)
-    results=processor.post_process_grounded_object_detection(
-        outputs,
-        inputs.input_ids,
-        box_threshold=float(os.environ.get("CANDY_BOX_THRESHOLD","0.28")),
+    # Transformers renamed box_threshold -> threshold in newer releases.
+    kwargs=dict(
         text_threshold=float(os.environ.get("CANDY_TEXT_THRESHOLD","0.20")),
         target_sizes=[image.size[::-1]],
-    )[0]
+    )
+    box_t=float(os.environ.get("CANDY_BOX_THRESHOLD","0.28"))
+    try:
+        results=processor.post_process_grounded_object_detection(
+            outputs, inputs.input_ids, threshold=box_t, **kwargs
+        )[0]
+    except TypeError:
+        results=processor.post_process_grounded_object_detection(
+            outputs, inputs.input_ids, box_threshold=box_t, **kwargs
+        )[0]
     out=[]
     for box,score,label in zip(results["boxes"],results["scores"],results["labels"]):
         b=[int(round(x)) for x in box.detach().cpu().tolist()]
@@ -85,9 +92,9 @@ def fallback_saliency(image:Image.Image):
     rows=[]
     H,W=bw.shape
     for i in range(1,n):
-        x,y,w,h,area=stats[i]
+        x,y,w,h,area=[int(v) for v in stats[i]]
         if area < .0025*W*H or area > .25*W*H: continue
-        rows.append({"box":[x,y,x+w,y+h],"score":.15,"label":"candy prop","raw_label":"salient_region","backend":"saliency_fallback"})
+        rows.append({"box":[int(x),int(y),int(x+w),int(y+h)],"score":.15,"label":"candy prop","raw_label":"salient_region","backend":"saliency_fallback"})
     return rows[:24]
 
 def segment_grabcut(rgb:np.ndarray,box):
