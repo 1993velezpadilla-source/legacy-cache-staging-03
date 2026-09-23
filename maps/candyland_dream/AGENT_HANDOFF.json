@@ -33,12 +33,45 @@
         "asset_catalog",
         "asset_manifest"
       ]
+    },
+    "research_scout": {
+      "id": "agent-c-research",
+      "instruction": ".agents/candyland-research-scout.md",
+      "consumes": [
+        "project_needs",
+        "failure_modes",
+        "asset_requests"
+      ],
+      "produces": [
+        "source_manifest",
+        "license_audit",
+        "ranked_tool_candidates",
+        "fallbacks"
+      ]
+    },
+    "code_support": {
+      "id": "agent-d-code",
+      "instruction": ".agents/candyland-code-support.md",
+      "consumes": [
+        "logs",
+        "failing_jobs",
+        "scripts",
+        "workflow_configs"
+      ],
+      "produces": [
+        "patches",
+        "tests",
+        "qa_reports",
+        "repaired_workflows"
+      ]
     }
   },
   "handoff_contract": {
     "stable_asset_id": true,
     "license_provenance_required": true,
     "render_qa_required": true,
-    "machine_readable_report_required": true
+    "machine_readable_report_required": true,
+    "research_provenance_required": true,
+    "failure_reproduction_required": true
   }
 }
