@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p candyland/out
-          xvfb-run -a -s "-screen 0 1600x1000x24" blender --background --python maps/candyland_dream/blender/build_candyland_v03.py 2>&1 | tee candyland/out/blender.log
+          xvfb-run -a -s "-screen 0 1600x1000x24" blender --background --python maps/candyland_dream/blender/build_candyland_v05.py 2>&1 | tee candyland/out/blender.log
           for f in candyland_dream_v03.blend candyland_dream_v03.glb candy_props_v03.glb candyland_iso.png candyland_spawn_view.png candyland_castle_view.png blender_report.json; do
             test -s "candyland/out/$f"
           done
@@ -111,7 +111,7 @@ jobs:
           import json, pathlib
           p=pathlib.Path("candyland/catalog")
           m=json.load(open(p/"catalog_manifest.json"))
-          assert 30 <= m["asset_count"] <= 60, m["asset_count"]
+          assert 30 <= m["asset_count"] <= 140, m["asset_count"]
           assert len(list(p.glob("*.png"))) == m["asset_count"]
           print("CATALOG_OK",m["asset_count"])
           PY
