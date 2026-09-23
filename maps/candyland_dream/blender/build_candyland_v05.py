@@ -181,7 +181,8 @@ for i in range(70):
     r=random.uniform(.08,.17)
     o=cyl(f"Ground_Sprinkle_{i:02d}",(x,y,0.23),r,random.uniform(.45,.85),sprinkle_mats[i%len(sprinkle_mats)],ENV,vertices=8,
           rot=(random.uniform(-.3,.3),random.uniform(-.3,.3),random.uniform(0,math.tau)))
-    o.scale.z=.28\n    o["catalog_skip"]=True
+    o.scale.z=.28
+    o["catalog_skip"]=True
 
 # ---------- polish lighting ----------
 bpy.ops.object.light_add(type="POINT",location=(-12,-10,7))
