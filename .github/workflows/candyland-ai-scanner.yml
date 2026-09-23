@@ -42,7 +42,7 @@ jobs:
           set -euo pipefail
           mkdir -p candyland/ai-scan
           # Transformers v5 renamed GroundingDINO box_threshold -> threshold.
-          sed -i 's/box_threshold=args.min_score/threshold=args.min_score/' maps/candyland_dream/scanner/scan_reference.py
+          sed -i 's/box_threshold=/threshold=/' maps/candyland_dream/scanner/scan_reference.py
           python3 maps/candyland_dream/scanner/scan_reference.py \
             --reference-b64 maps/candyland_dream/scanner/references/approved_overview.jpg.b64 \
             --seed maps/candyland_dream/scanner/reference_seed_inventory.json \
