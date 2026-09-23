@@ -161,9 +161,11 @@ jobs:
           import json, pathlib
           p=pathlib.Path("candyland/catalog")
           m=json.load(open(p/"catalog_manifest.json"))
-          assert 30 <= m["asset_count"] <= 240, m["asset_count"]
+          assert m["status"]=="CATALOG_RENDERED", m
+          assert m["source_object_count"] >= 30, m
+          assert 1 <= m["asset_count"] <= m["source_object_count"], m
           assert len(list(p.glob("*.png"))) == m["asset_count"]
-          print("CATALOG_OK",m["asset_count"])
+          print("CATALOG_OK",m["asset_count"],"families from",m["source_object_count"],"objects")
           PY
       - name: Build catalog contact sheet
         run: |
@@ -174,19 +176,27 @@ jobs:
           from pathlib import Path
           root=Path("candyland/catalog")
           items=json.load(open(root/"catalog_manifest.json"))["assets"]
-          thumb,label_h,cols=220,34,6
-          rows=math.ceil(len(items)/cols)
-          sheet=Image.new("RGB",(cols*thumb,rows*(thumb+label_h)),(28,24,36))
-          draw=ImageDraw.Draw(sheet)
-          for i,item in enumerate(items):
-              im=Image.open(root/item["image"]).convert("RGBA")
-              bg=Image.new("RGBA",im.size,(28,24,36,255)); bg.alpha_composite(im)
-              bg=bg.convert("RGB"); bg.thumbnail((thumb-10,thumb-10))
-              x=(i%cols)*thumb+(thumb-bg.width)//2
-              y=(i//cols)*(thumb+label_h)+(thumb-bg.height)//2
-              sheet.paste(bg,(x,y))
-              draw.text(((i%cols)*thumb+8,(i//cols)*(thumb+label_h)+thumb+7),item["name"][:28],fill=(245,245,245))
-          sheet.save(root/"catalog_contact_sheet.jpg",quality=88)
+          thumb,label_h,cols,page_size=220,34,6,60
+          pages=[]
+          for page_idx,start in enumerate(range(0,len(items),page_size),1):
+              chunk=items[start:start+page_size]
+              rows=math.ceil(len(chunk)/cols)
+              sheet=Image.new("RGB",(cols*thumb,rows*(thumb+label_h)),(28,24,36))
+              draw=ImageDraw.Draw(sheet)
+              for i,item in enumerate(chunk):
+                  im=Image.open(root/item["image"]).convert("RGBA")
+                  bg=Image.new("RGBA",im.size,(28,24,36,255)); bg.alpha_composite(im)
+                  bg=bg.convert("RGB"); bg.thumbnail((thumb-10,thumb-10))
+                  x=(i%cols)*thumb+(thumb-bg.width)//2
+                  y=(i//cols)*(thumb+label_h)+(thumb-bg.height)//2
+                  sheet.paste(bg,(x,y))
+                  label=f'{item["family_name"]} x{item["instance_count"]}'
+                  draw.text(((i%cols)*thumb+8,(i//cols)*(thumb+label_h)+thumb+7),label[:31],fill=(245,245,245))
+              name=f"catalog_contact_sheet_{page_idx:02d}.jpg"
+              sheet.save(root/name,quality=88)
+              pages.append(name)
+          json.dump({"status":"CONTACT_SHEETS_OK","pages":pages,"page_size":page_size},open(root/"contact_sheets.json","w"),indent=2)
+          print("CONTACT_SHEETS_OK",pages)
           PY
       - uses: actions/upload-artifact@v4
         with:
