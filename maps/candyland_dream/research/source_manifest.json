@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "project": "Candyland Dream",
+  "maintained_by": "agent-c-research",
+  "sources": [],
+  "required_fields": [
+    "name",
+    "url",
+    "version_or_commit",
+    "license",
+    "redistribution",
+    "intended_use",
+    "runtime_requirements",
+    "status",
+    "notes"
+  ],
+  "statuses": [
+    "approved",
+    "conditional",
+    "reference_only",
+    "rejected"
+  ]
+}
