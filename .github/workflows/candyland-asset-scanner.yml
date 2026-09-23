@@ -54,6 +54,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq blender xvfb libegl1 libgl1-mesa-dri libglx-mesa0
 
+      - name: Run scanner contract tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v maps/candyland_dream/scanner/test_scanner_contracts.py
+
       - name: Detect items and create 3D proxies
         env:
           CANDY_DEVICE: cpu
