@@ -22,6 +22,18 @@ The automated Blender build downloads these public FBX assets directly from the 
 
 Each downloaded file is recorded in `blender_report.json` with its source URL, CC0 status, and SHA-256 digest.
 
+
+## Additional CC0 meshes integrated by the v0.5 detail pass
+Source: `KayKit-Game-Assets/KayKit-Halloween-Bits-1.0`
+License: CC0-1.0.
+- `bench.fbx` used as a recolored CandyBench.
+
+Source: `KayKit-Game-Assets/KayKit-Restaurant-Bits-1.0`
+License: CC0-1.0.
+- `crate_buns.fbx` used as a recolored CookieCrate.
+
+Both repositories explicitly permit personal, educational and commercial use, with attribution optional.
+
 ## Free Blender tooling evaluated
 `ranjian0/building_tools` was reviewed as an optional procedural-building helper. It is MIT licensed and reports Blender 4.0 compatibility. It is not bundled into the Candyland runtime in this pass, so the map does not take a dependency on the add-on.
 
