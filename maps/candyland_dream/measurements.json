@@ -1,0 +1,22 @@
+{
+  "name": "Candyland Dream",
+  "version": "0.1.0",
+  "status": "BLOCKOUT_PREPARED_NOT_EXECUTED",
+  "units": "meters",
+  "playable_area": {"width": 96, "depth": 72},
+  "spawn": {"x": -34, "y": -25, "z": 0},
+  "candy_plaza": {"x": -12, "y": -10, "z": 0},
+  "lollipop_forest": {"x": -28, "y": 18, "z": 0},
+  "chocolate_river": {"x": 18, "y": 5, "z": -0.5},
+  "cupcake_castle": {"x": 28, "y": 24, "z": 0},
+  "main_path_width": 5.0,
+  "river_width": 7.0,
+  "castle_platform_radius": 12.0,
+  "player_clearance": 1.2,
+  "design_rules": {
+    "landmarks_visible_from_spawn": true,
+    "avoid_long_unbroken_sightlines": true,
+    "keep_main_route_readable": true,
+    "reserve_edges_for_future_expansion": true
+  }
+}
