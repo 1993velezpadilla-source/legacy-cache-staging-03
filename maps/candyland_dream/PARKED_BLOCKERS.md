@@ -35,7 +35,7 @@ Latest production run:
 ## PARKED BLOCKER 1 — Asset catalog hard cap
 
 ### Status
-PARKED FOR BRAINSTORM / FIX LATER
+FIX IMPLEMENTED — VALIDATION RUNNING
 
 ### Exact failure
 Agent 2 — Open-license asset scout + catalog failed while rendering the individual asset catalog.
@@ -79,14 +79,19 @@ Possible solutions:
 6. Add a dedupe stage before catalog rendering.
 7. Create separate ENV and PROPS catalogs.
 
-### Recommended future direction
-Do **not** simply keep raising the hard cap forever.
+### Implemented direction
+The catalog now follows the long-term design instead of raising the cap:
+- unique asset-family catalog
+- numbered/repeated placements deduplicated
+- instance membership/counts preserved in the manifest
+- paginated contact sheets
+- only a high sanity ceiling remains for pathological scenes
 
-Best long-term design:
-- unique asset family catalog
-- deduplicated variants
-- repeated map placements excluded
-- optional paginated catalog for debugging
+Implementation commits:
+- `6816c6303383e57d5538148d4467ee038f8e17dc`
+- `38e16097b0fa632b920a24bc70109f3d9e3222b0`
+
+Validation run: `35856563047`
 
 ---
 
