@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "reference_id": "approved_overview",
+  "reference_path": "maps/candyland_dream/scanner/references/approved_overview.jpg",
+  "coordinate_space": "normalized_xyxy",
+  "note": "Bootstrap detections visually derived from the approved Candyland concept. The automated detector replaces or augments these when available.",
+  "detections": [
+    {"label":"cupcake castle tower","class":"cupcake_tower","bbox":[0.35,0.05,0.70,0.39],"score":0.99,"priority":10},
+    {"label":"lollipop tree","class":"lollipop_tree","bbox":[0.02,0.25,0.26,0.66],"score":0.98,"priority":9},
+    {"label":"candy market stall","class":"market_stall","bbox":[0.26,0.37,0.57,0.70],"score":0.97,"priority":9},
+    {"label":"wafer bridge","class":"wafer_bridge_decor","bbox":[0.62,0.37,0.85,0.61],"score":0.96,"priority":9},
+    {"label":"candy spawn gate bow","class":"satin_bow","bbox":[0.02,0.65,0.26,0.96],"score":0.98,"priority":10},
+    {"label":"heart lantern","class":"heart_lantern","bbox":[0.18,0.45,0.34,0.70],"score":0.94,"priority":8},
+    {"label":"cherry candy","class":"cherry","bbox":[0.48,0.24,0.62,0.44],"score":0.96,"priority":9},
+    {"label":"strawberry candy","class":"strawberry","bbox":[0.69,0.62,0.88,0.88],"score":0.96,"priority":9},
+    {"label":"heart crystal","class":"heart_crystal","bbox":[0.42,0.48,0.57,0.68],"score":0.93,"priority":8},
+    {"label":"candy signpost","class":"signpost","bbox":[0.73,0.47,0.94,0.77],"score":0.92,"priority":8},
+    {"label":"frosting cliff","class":"frosting_rock","bbox":[0.54,0.63,0.75,0.94],"score":0.94,"priority":8},
+    {"label":"candy bench","class":"candy_bench","bbox":[0.28,0.61,0.43,0.79],"score":0.88,"priority":6}
+  ]
+}
