@@ -359,15 +359,15 @@ world=bpy.context.scene.world
 if world and world.use_nodes:
     bg=world.node_tree.nodes.get("Background")
     if bg:
-        bg.inputs["Color"].default_value=(0.155,0.075,0.19,1)
-        bg.inputs["Strength"].default_value=.42
+        bg.inputs["Color"].default_value=(0.58,0.36,0.62,1)
+        bg.inputs["Strength"].default_value=.72
 
 bpy.ops.object.light_add(type="AREA",location=(-22,-24,32))
-beauty=bpy.context.object; beauty.name="V06_Beauty_Key"; beauty.data.energy=1850; beauty.data.size=26; beauty.data.color=(1.0,.48,.67); look_at(beauty,(-6,-2,2))
+beauty=bpy.context.object; beauty.name="V06_Beauty_Key"; beauty.data.energy=3200; beauty.data.size=26; beauty.data.color=(1.0,.48,.67); look_at(beauty,(-6,-2,2))
 bpy.ops.object.light_add(type="AREA",location=(38,18,26))
-pearllight=bpy.context.object; pearllight.name="V06_Pearl_Fill"; pearllight.data.energy=1450; pearllight.data.size=22; pearllight.data.color=(.58,.72,1.0); look_at(pearllight,(18,12,4))
+pearllight=bpy.context.object; pearllight.name="V06_Pearl_Fill"; pearllight.data.energy=2600; pearllight.data.size=22; pearllight.data.color=(.58,.72,1.0); look_at(pearllight,(18,12,4))
 bpy.ops.object.light_add(type="AREA",location=(-22,30,22))
-mintlight=bpy.context.object; mintlight.name="V06_Mint_Rim"; mintlight.data.energy=950; mintlight.data.size=18; mintlight.data.color=(.52,1.0,.82); look_at(mintlight,(-26,20,4))
+mintlight=bpy.context.object; mintlight.name="V06_Mint_Rim"; mintlight.data.energy=1500; mintlight.data.size=18; mintlight.data.color=(.52,1.0,.82); look_at(mintlight,(-26,20,4))
 
 scene=bpy.context.scene
 scene.render.resolution_x=1280; scene.render.resolution_y=720
