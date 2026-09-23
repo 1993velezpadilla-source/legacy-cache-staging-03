@@ -158,6 +158,12 @@ def heart(name,loc,scale=1.0,material=HEART_EMISSIVE,rot=(math.radians(90),0,0),
     sp.use_cyclic_u=True
     o=bpy.data.objects.new(name,curve); collection.objects.link(o)
     o.location=loc; o.rotation_euler=rot; curve.materials.append(material)
+    # Curves look good in Blender but must become meshes to survive GLB export.
+    for s in bpy.context.selected_objects: s.select_set(False)
+    o.select_set(True); bpy.context.view_layer.objects.active=o
+    bpy.ops.object.convert(target="MESH")
+    o=bpy.context.object
+    o["catalog_skip"]=True
     return o
 
 def bow(name,loc,scale=1.0,material=BLUSH_GLOSS,collection=PROPS,rot=(math.radians(90),0,0)):
@@ -175,12 +181,12 @@ def road_segment(name,a,b,width=4.7):
     dx=bx-ax; dy=by-ay; length=math.hypot(dx,dy); ang=math.atan2(dy,dx)
     # cream border underneath
     border=cube(name+"_Border",((ax+bx)/2,(ay+by)/2,.37),(length/2+0.55,width/2+.48,.18),PEARL_FROST,ENV,rot=(0,0,ang))
-    add_bevel(border,.48,6)
+    add_bevel(border,.48,6); border["catalog_skip"]=True
     road=cube(name,((ax+bx)/2,(ay+by)/2,.62),(length/2,width/2,.13),BUBBLEGUM_GLOSS,ENV,rot=(0,0,ang))
-    add_bevel(road,.38,6)
+    add_bevel(road,.38,6); road["catalog_skip"]=True
     # narrow iridescent center ribbon
     stripe=cube(name+"_Iridescent",((ax+bx)/2,(ay+by)/2,.78),(length/2-.2,.20,.035),IRIDESCENT,ENV,rot=(0,0,ang))
-    add_bevel(stripe,.13,3)
+    add_bevel(stripe,.13,3); stripe["catalog_skip"]=True
     return road
 
 # Replace the disconnected visual feeling with a continuous premium candy route.
@@ -190,7 +196,7 @@ for i in range(len(v06_route)-1):
 
 # Gloss overlay on the Chocolate River, preserving the chocolate identity.
 river_surface=cube("V06_Chocolate_River_Gloss",(18,5,.08),(4.76,21.75,.07),CHOCO_GLOSS,ENV)
-add_bevel(river_surface,.38,5)
+add_bevel(river_surface,.38,5); river_surface["catalog_skip"]=True
 for y in (-12,-4,4,12,20):
     heart(f"V06_River_Heart_{y}",(18,y,.34),.62,HEART_EMISSIVE,rot=(0,0,0),collection=ENV)
 
@@ -222,7 +228,8 @@ for i,(x,y) in enumerate([(-19,-15),(-14,-17),(-8,-16),(-4,-12)]):
 # Heart lantern rhythm along the main route.
 lantern_points=[(-29,-22),(-21,-17),(-15,-12),(-18,-1),(-25,12),(-9,2),(7,1),(20,10),(25,18)]
 for i,(x,y) in enumerate(lantern_points):
-    cyl(f"V06_HeartLamp_Post_{i}",(x,y,1.75),.105,3.5,GOLD_PREMIUM,PROPS,vertices=14)
+    post=cyl(f"V06_HeartLamp_Post_{i}",(x,y,1.75),.105,3.5,GOLD_PREMIUM,PROPS,vertices=14)
+    post["catalog_skip"]=True
     heart(f"V06_HeartLamp_Gem_{i}",(x,y,3.75),.38,HEART_EMISSIVE,rot=(math.radians(90),0,0))
 
 # Bow landmarks in the lollipop forest to tie the whole map together.
