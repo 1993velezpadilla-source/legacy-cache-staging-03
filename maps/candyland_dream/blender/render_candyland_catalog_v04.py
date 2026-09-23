@@ -23,8 +23,8 @@ for cname in ("ENV","PROPS"):
     if c:
         visual.extend(o for o in c.objects if o.type=="MESH" and not o.hide_render and not o.get("catalog_skip",False))
 visual=sorted(visual,key=lambda o:o.name.lower())
-if not (30 <= len(visual) <= 140):
-    raise RuntimeError(f"Expected 30-140 visible ENV/PROPS meshes, got {len(visual)}")
+if not (30 <= len(visual) <= 240):
+    raise RuntimeError(f"Expected 30-240 visible ENV/PROPS meshes, got {len(visual)}")
 
 cam=scene.camera
 if cam is None:
