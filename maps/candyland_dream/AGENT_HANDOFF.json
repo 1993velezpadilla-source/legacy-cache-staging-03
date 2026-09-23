@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "project": "Candyland Dream",
+  "agents": {
+    "build_engineer": {
+      "id": "agent-a-build",
+      "instruction": ".agents/candyland-build-engineer.md",
+      "consumes": [
+        "approved_glbs",
+        "asset_manifest",
+        "qa_renders"
+      ],
+      "produces": [
+        "map_build",
+        "beauty_renders",
+        "glb_exports",
+        "engine_compile",
+        "android_qa"
+      ]
+    },
+    "asset_engineer": {
+      "id": "agent-b-3d-assets",
+      "instruction": ".agents/candyland-3d-asset-engineer.md",
+      "consumes": [
+        "reference_images",
+        "scanner_manifest",
+        "quality_queue"
+      ],
+      "produces": [
+        "segmented_crops",
+        "proxy_glbs",
+        "hq_glbs",
+        "asset_catalog",
+        "asset_manifest"
+      ]
+    }
+  },
+  "handoff_contract": {
+    "stable_asset_id": true,
+    "license_provenance_required": true,
+    "render_qa_required": true,
+    "machine_readable_report_required": true
+  }
+}
