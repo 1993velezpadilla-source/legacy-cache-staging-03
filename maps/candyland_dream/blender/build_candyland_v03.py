@@ -1,4 +1,4 @@
-"""Candyland Dream v0.4 Blender build (v03 compatibility filenames).
+"""Candyland Dream v0.5 Blender build (v03 compatibility filenames).
 
 Adds recognizable semantic candy props plus verified CC0 GitHub models while
 keeping the existing pipeline filenames so downstream validation stays stable.
@@ -214,8 +214,12 @@ def make_candy_cart(name,loc,scale=1.0):
 cube("Candyland_Ground",(0,0,-1),(48,36,1),PINK)
 route=[(-34,-25),(-25,-20),(-12,-10),(-20,3),(-28,18),(0,-2),(18,5),(28,24)]
 for i,(x,y) in enumerate(route):
-    slab=cube(f"CookiePath_{i:02d}",(x,y,0.25),(4.2,2.7,0.28),PATH)
-    slab.rotation_euler.z=math.radians((-1)**i*4)
+    parts=[cyl(f"CookiePath_{i:02d}_Base",(x,y,0.28),3.15,0.56,BROWN,ENV,vertices=36)]
+    for j,a in enumerate((0.25,1.35,2.45,3.55,4.65,5.55)):
+        px=x+math.cos(a)*1.75; py=y+math.sin(a)*1.55
+        parts.append(cyl(f"CookiePath_{i:02d}_Chip_{j}",(px,py,0.60),0.25,0.12,CHOCO,ENV,vertices=12))
+    cookie=join_objects(f"CookiePath_{i:02d}",parts,ENV)
+    cookie.rotation_euler.z=math.radians((-1)**i*6)
 
 cyl("Candy_Plaza",(-12,-10,0.2),8,0.5,CREAM,ENV,vertices=48)
 make_chocolate_fountain("Chocolate_Fountain",(-12,-10),0.9)
@@ -233,6 +237,8 @@ external_specs=[
     ("MintPine_B","https://raw.githubusercontent.com/SkywolfGameStudios/CC0Tree/main/Assets/SM_Pine_Tree.fbx",(-40,28),8.0,WHITE,-0.5),
     ("SyrupWateringCan","https://raw.githubusercontent.com/SkywolfGameStudios/CC0Tree/main/Assets/SM_WateringCan.fbx",(8,-18),3.2,PURPLE,0.4),
     ("CandyBin","https://raw.githubusercontent.com/SkywolfGameStudios/CC0Tree/main/Assets/SM_TrashCan.fbx",(-3,-7),2.8,BLUE,-0.2),
+    ("CandyBench","https://raw.githubusercontent.com/KayKit-Game-Assets/KayKit-Halloween-Bits-1.0/main/addons/kaykit_halloween_bits/Assets/fbx/bench.fbx",(-11,9),2.2,PINK,-0.35),
+    ("CookieCrate","https://raw.githubusercontent.com/KayKit-Game-Assets/KayKit-Restaurant-Bits-1.0/main/addons/kaykit_restaurant_bits/Assets/fbx/crate_buns.fbx",(13,-15),2.6,CREAM,0.30),
 ]
 for spec in external_specs:
     obj,meta=import_fbx_cc0(spec[0],spec[1],spec[2],spec[3],spec[4],PROPS,spec[5]); cc0.append(meta)
@@ -246,7 +252,13 @@ semantic += [make_gummy_bear("Gummy_Bear_Green",(5,-9),0.85,GREEN), make_gummy_b
 semantic += [make_candy_cart("Candy_Cart",(-28,-3),0.8)]
 
 cyl("Castle_Platform",(28,24,0.5),12,1.0,CREAM,ENV,vertices=48)
-castle_parts=[]
+castle_parts=[
+    cube("Castle_MainHall",(28,24,4.0),(5.5,4.4,3.0),CREAM,PROPS),
+    cube("Castle_IcingBand",(28,19.45,5.8),(5.8,0.38,0.38),WHITE,PROPS),
+    cube("Castle_Entrance",(28,19.2,2.3),(1.35,0.55,2.25),DARK,PROPS),
+]
+for sx in (-4.6,-2.3,0,2.3,4.6):
+    castle_parts.append(cube(f"Castle_SugarBattlement_{sx}",(28+sx,19.4,7.25),(0.55,0.55,0.55),WHITE,PROPS))
 for i,(dx,dy,r,h) in enumerate([(-6,-5,2.2,8),(6,-5,2.2,8),(-6,5,2.4,10),(6,5,2.4,10),(0,0,3.2,14)]):
     tower=cyl(f"CastleTower_{i:02d}",(28+dx,24+dy,h/2+1),r,h,PURPLE,PROPS,vertices=32); castle_parts.append(tower)
     roof=cone(f"CastleRoof_{i:02d}",(28+dx,24+dy,h+2.4),r*1.25,0.15,4.6,RED,PROPS,vertices=32); castle_parts.append(roof)
@@ -313,7 +325,7 @@ if props:
 
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/"candyland_dream_v03.blend"))
 report={
-  "version":"0.4.0",
+  "version":"0.5.0",
   "status":"BLENDER_EXECUTED",
   "compatibility_filenames":"v03",
   "route_nodes":len(route),"path_width_m":5.0,"player_clearance_m":1.2,
