@@ -50,6 +50,10 @@ Open the preferred GUI workspace and return the direct clickable GUI link.
 
 Only use the GitHub Issue Hub as a clearly labeled fallback if the GUI deployment is unavailable.
 
+Canonical GUI:
+
+`https://hayuya-studio.vercel.app`
+
 Normal successful reply:
 
-`HAYUYA is open: <GUI LINK>`
+`HAYUYA is open: https://hayuya-studio.vercel.app`
