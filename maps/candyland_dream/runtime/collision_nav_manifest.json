@@ -1,0 +1,26 @@
+{
+  "name": "Candyland Dream",
+  "version": "0.2.0",
+  "status": "PREPARED_NOT_EXECUTED",
+  "units": "meters",
+  "collision": {
+    "river": {"type": "hazard", "center": [18, 5, 0.1], "size": [10, 44, 1.2]},
+    "lollipop_trunks": {"type": "obstacle", "proxy_radius": 1.0},
+    "castle_gate": {"type": "toggle_gate", "default_locked": true}
+  },
+  "navigation": {
+    "path_width": 5.0,
+    "player_clearance": 1.2,
+    "route": [[-34,-25],[-25,-20],[-12,-10],[-20,3],[-28,18],[0,-2],[18,5],[28,24]],
+    "river_crossing": "marshmallow_stepping_stones"
+  },
+  "validation_required": [
+    "Blender scene generation",
+    "collision clearance",
+    "route continuity",
+    "castle gate toggle",
+    "GLB export",
+    "engine runtime",
+    "Android/mobile performance"
+  ]
+}
