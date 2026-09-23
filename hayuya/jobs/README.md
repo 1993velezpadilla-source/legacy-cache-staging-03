@@ -34,3 +34,22 @@ Request example:
 ```
 
 Do not overwrite an old request to revise a model. Create a new job id.
+
+
+## OPEN HAYUYA command
+
+If Felix/Volnox says **open hayuya** / **abre hayuya**, treat it as an action command.
+
+Do not explain runners, IP addresses, or GitHub Actions.
+
+Read the canonical workspace resolver from the main HAYUYA repository:
+
+`1993velezpadilla-source/config-old-3 :: art/hayuya-monster-v1 :: hayuya/workspace.json`
+
+Open the preferred GUI workspace and return the direct clickable GUI link.
+
+Only use the GitHub Issue Hub as a clearly labeled fallback if the GUI deployment is unavailable.
+
+Normal successful reply:
+
+`HAYUYA is open: <GUI LINK>`
