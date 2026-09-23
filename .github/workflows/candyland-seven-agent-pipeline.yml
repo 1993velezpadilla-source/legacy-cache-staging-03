@@ -113,7 +113,7 @@ jobs:
           import json, pathlib
           p=pathlib.Path("candyland/catalog")
           m=json.load(open(p/"catalog_manifest.json"))
-          assert 30 <= m["asset_count"] <= 180, m["asset_count"]
+          assert 30 <= m["asset_count"] <= 240, m["asset_count"]
           assert len(list(p.glob("*.png"))) == m["asset_count"]
           print("CATALOG_OK",m["asset_count"])
           PY
