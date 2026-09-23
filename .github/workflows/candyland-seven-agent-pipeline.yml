@@ -1,0 +1,517 @@
+name: Candyland Dream Seven-Agent Production Pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/candyland-seven-agent-pipeline.yml"
+      - "maps/candyland_dream/blender/**"
+      - "maps/candyland_dream/runtime/**"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: candyland-seven-agent-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent_1_world:
+    name: "Agent 1 — World build + hero renders"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Blender runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq blender python3-numpy xvfb libegl1 libgl1-mesa-dri libglx-mesa0
+          blender --version
+      - name: Execute Candyland world build
+        env:
+          CANDY_OUT: candyland/out
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p candyland/out
+          xvfb-run -a -s "-screen 0 1600x1000x24" blender --background --python maps/candyland_dream/blender/build_candyland_v03.py 2>&1 | tee candyland/out/blender.log
+          for f in candyland_dream_v03.blend candyland_dream_v03.glb candy_props_v03.glb candyland_iso.png candyland_spawn_view.png candyland_castle_view.png blender_report.json; do
+            test -s "candyland/out/$f"
+          done
+          python3 - <<'PY'
+          import json
+          r=json.load(open("candyland/out/blender_report.json"))
+          assert r["status"]=="BLENDER_EXECUTED", r
+          assert r["visual_meshes"] >= 30, r
+          assert r["visual_triangles"] > 1000, r
+          print("WORLD_QA_OK", r)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent1-world
+          path: candyland/out/
+          if-no-files-found: error
+          retention-days: 14
+
+  agent_2_assets:
+    name: "Agent 2 — Open-license asset scout + catalog"
+    needs: agent_1_world
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: candyland-agent1-world
+          path: candyland/out
+      - name: Scout approved CC0 GitHub packs
+        run: |
+          set -euo pipefail
+          mkdir -p candyland/scout/src
+          git clone --depth 1 https://github.com/SkywolfGameStudios/CC0Tree.git candyland/scout/src/CC0Tree
+          git clone --depth 1 https://github.com/KayKit-Game-Assets/KayKit-Restaurant-Bits-1.0.git candyland/scout/src/KayKit-Restaurant-Bits-1.0
+          python3 - <<'PY'
+          import json, pathlib, subprocess
+          root=pathlib.Path("candyland/scout/src")
+          sources=[]
+          for p in sorted(x for x in root.iterdir() if x.is_dir()):
+              licenses=list(p.glob("LICENSE*"))+list(p.glob("license*"))
+              if not licenses:
+                  raise SystemExit(f"Missing license file in {p}")
+              commit=subprocess.check_output(["git","-C",str(p),"rev-parse","HEAD"],text=True).strip()
+              models=[x for x in p.rglob("*") if x.suffix.lower() in {".fbx",".obj",".gltf",".glb",".blend"}]
+              sources.append({
+                  "name":p.name,
+                  "commit":commit,
+                  "license_files":[str(x.relative_to(p)) for x in licenses],
+                  "model_count":len(models),
+                  "sample_models":[str(x.relative_to(p)) for x in models[:30]],
+              })
+          pathlib.Path("candyland/scout").mkdir(parents=True,exist_ok=True)
+          json.dump({"status":"SCOUT_OK","sources":sources},open("candyland/scout/asset_scout_report.json","w"),indent=2)
+          print(json.dumps(sources,indent=2))
+          PY
+      - name: Install Blender runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq blender python3-numpy xvfb libegl1 libgl1-mesa-dri libglx-mesa0
+      - name: Render individual asset catalog
+        env:
+          CANDY_CATALOG_OUT: candyland/catalog
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p candyland/catalog
+          xvfb-run -a -s "-screen 0 1200x1200x24" blender --background candyland/out/candyland_dream_v03.blend --python maps/candyland_dream/blender/render_candyland_catalog_v04.py 2>&1 | tee candyland/catalog/catalog-render.log
+          python3 - <<'PY'
+          import json, pathlib
+          p=pathlib.Path("candyland/catalog")
+          m=json.load(open(p/"catalog_manifest.json"))
+          assert 30 <= m["asset_count"] <= 60, m["asset_count"]
+          assert len(list(p.glob("*.png"))) == m["asset_count"]
+          print("CATALOG_OK",m["asset_count"])
+          PY
+      - name: Build catalog contact sheet
+        run: |
+          python3 -m pip install --quiet pillow==11.3.0
+          python3 - <<'PY'
+          from PIL import Image,ImageDraw
+          import json,math
+          from pathlib import Path
+          root=Path("candyland/catalog")
+          items=json.load(open(root/"catalog_manifest.json"))["assets"]
+          thumb,label_h,cols=220,34,6
+          rows=math.ceil(len(items)/cols)
+          sheet=Image.new("RGB",(cols*thumb,rows*(thumb+label_h)),(28,24,36))
+          draw=ImageDraw.Draw(sheet)
+          for i,item in enumerate(items):
+              im=Image.open(root/item["image"]).convert("RGBA")
+              bg=Image.new("RGBA",im.size,(28,24,36,255)); bg.alpha_composite(im)
+              bg=bg.convert("RGB"); bg.thumbnail((thumb-10,thumb-10))
+              x=(i%cols)*thumb+(thumb-bg.width)//2
+              y=(i//cols)*(thumb+label_h)+(thumb-bg.height)//2
+              sheet.paste(bg,(x,y))
+              draw.text(((i%cols)*thumb+8,(i//cols)*(thumb+label_h)+thumb+7),item["name"][:28],fill=(245,245,245))
+          sheet.save(root/"catalog_contact_sheet.jpg",quality=88)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent2-assets
+          path: |
+            candyland/scout/asset_scout_report.json
+            candyland/catalog/
+          if-no-files-found: error
+          retention-days: 14
+
+  agent_3_audio:
+    name: "Agent 3 — Original audio + open-pack manifest"
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - name: Generate original Candyland sound set
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          mkdir -p candyland/audio
+          python3 - <<'PY'
+          import math, random, wave, struct, json
+          from pathlib import Path
+          OUT=Path("candyland/audio")
+          SR=48000
+          random.seed(1993)
+          def write(name, seconds, fn):
+              n=int(SR*seconds)
+              vals=[]
+              peak=1e-9
+              for i in range(n):
+                  t=i/SR
+                  v=max(-1.0,min(1.0,fn(t,seconds,i)))
+                  vals.append(v); peak=max(peak,abs(v))
+              scale=.90/peak
+              with wave.open(str(OUT/name),"wb") as w:
+                  w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
+                  for v in vals:
+                      w.writeframesraw(struct.pack("<h",int(max(-1,min(1,v*scale))*32767)))
+          def env(t,d,a=.02,r=.12):
+              return min(1,t/max(a,1e-4))*min(1,(d-t)/max(r,1e-4))
+          write("sugar_pop.wav",.45,lambda t,d,i: env(t,d,.005,.18)*(math.sin(2*math.pi*(220+900*t)*t)+.35*math.sin(2*math.pi*760*t)))
+          write("sparkle.wav",1.35,lambda t,d,i: env(t,d,.01,.35)*sum(.22*math.sin(2*math.pi*f*t) for f in (880,1320,1760,2420)))
+          write("ui_plop.wav",.30,lambda t,d,i: env(t,d,.003,.10)*(math.sin(2*math.pi*(420-260*t/d)*t)+.2*math.sin(2*math.pi*95*t)))
+          write("portal_hum.wav",6.0,lambda t,d,i: .34*math.sin(2*math.pi*55*t)+.16*math.sin(2*math.pi*83*t)+.08*math.sin(2*math.pi*(150+8*math.sin(t))*t))
+          notes=(261.63,329.63,392.00,523.25,659.25)
+          def ambience(t,d,i):
+              base=.07*math.sin(2*math.pi*55*t)
+              k=int(t//2.0)%len(notes)
+              local=t%2.0
+              bell=math.exp(-2.0*local)*.18*math.sin(2*math.pi*notes[k]*t)
+              air=.012*(random.random()*2-1)
+              return base+bell+air
+          write("candy_ambience.wav",20.0,ambience)
+          report={
+            "status":"AUDIO_GENERATED",
+            "sample_rate":SR,
+            "files":["sugar_pop.wav","sparkle.wav","ui_plop.wav","portal_hum.wav","candy_ambience.wav"],
+            "external_pack_candidates":[
+              {"name":"Kenney Impact Sounds","license":"CC0","url":"https://kenney.nl/assets/impact-sounds"},
+              {"name":"Kenney Interface Sounds","license":"CC0","url":"https://kenney.nl/assets/interface-sounds"},
+              {"name":"Kenney UI Audio","license":"CC0","url":"https://kenney.nl/assets/ui-audio"},
+              {"name":"Freesound","license":"PER_FILE; CC0 ONLY FOR AUTO-INGEST","url":"https://freesound.org/"}
+            ]
+          }
+          json.dump(report,open(OUT/"audio_report.json","w"),indent=2)
+          PY
+          for f in candyland/audio/*.wav; do ffmpeg -hide_banner -loglevel error -y -i "$f" -c:a libvorbis -q:a 5 "${f%.wav}.ogg"; done
+          test -s candyland/audio/candy_ambience.ogg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent3-audio
+          path: candyland/audio/
+          if-no-files-found: error
+          retention-days: 14
+
+  agent_4_cinematic:
+    name: "Agent 4 — Cinematic preview + VFX media"
+    needs: [agent_1_world, agent_3_audio]
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: candyland-agent1-world
+          path: candyland/out
+      - uses: actions/download-artifact@v5
+        with:
+          name: candyland-agent3-audio
+          path: candyland/audio
+      - name: Build cinematic from verified hero renders
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install --quiet pillow==11.3.0
+          mkdir -p candyland/video/frames
+          python3 - <<'PY'
+          from PIL import Image,ImageDraw,ImageFont
+          from pathlib import Path
+          import math,json
+          src=[
+            Path("candyland/out/candyland_spawn_view.png"),
+            Path("candyland/out/candyland_iso.png"),
+            Path("candyland/out/candyland_castle_view.png"),
+          ]
+          out=Path("candyland/video/frames")
+          W,H,FPS=1280,720,24
+          seconds_per=4
+          frames=[]
+          for p in src:
+              im=Image.open(p).convert("RGB")
+              frames.append(im)
+          count=0
+          for si,im in enumerate(frames):
+              seg=seconds_per*FPS
+              for j in range(seg):
+                  u=j/(seg-1)
+                  zoom=1.0+0.07*u
+                  iw,ih=im.size
+                  cropw=int(iw/zoom); croph=int(ih/zoom)
+                  cx=iw*(.48+.04*math.sin((u+si)*math.pi))
+                  cy=ih*(.50+.03*math.cos((u+si)*math.pi))
+                  l=max(0,min(iw-cropw,int(cx-cropw/2)))
+                  t=max(0,min(ih-croph,int(cy-croph/2)))
+                  fr=im.crop((l,t,l+cropw,t+croph)).resize((W,H),Image.Resampling.LANCZOS)
+                  # restrained title card; no copyrighted external artwork.
+                  d=ImageDraw.Draw(fr)
+                  if si==0 and j < FPS*2:
+                      d.rectangle((42,42,555,128),fill=(18,12,30))
+                      d.text((66,62),"CANDYLAND DREAM",fill=(255,236,248))
+                      d.text((66,92),"Seven-Agent Production Preview",fill=(214,190,225))
+                  fr.save(out/f"frame_{count:04d}.jpg",quality=88)
+                  count+=1
+          json.dump({"status":"VIDEO_FRAMES_OK","frames":count,"fps":FPS,"duration_s":count/FPS},open("candyland/video/video_report.json","w"),indent=2)
+          # poster/contact sheet
+          poster=Image.new("RGB",(W,H),(20,15,28))
+          thirds=[x.resize((W//3,H),Image.Resampling.LANCZOS) for x in frames]
+          for i,x in enumerate(thirds): poster.paste(x,(i*(W//3),0))
+          poster.save("candyland/video/candyland_cinematic_poster.jpg",quality=90)
+          PY
+          ffmpeg -hide_banner -loglevel error -y             -framerate 24 -i candyland/video/frames/frame_%04d.jpg             -i candyland/audio/candy_ambience.wav             -shortest -c:v libx264 -preset medium -crf 21 -pix_fmt yuv420p             -c:a aac -b:a 160k -movflags +faststart candyland/video/candyland_preview.mp4
+          test -s candyland/video/candyland_preview.mp4
+          rm -rf candyland/video/frames
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent4-cinematic
+          path: candyland/video/
+          if-no-files-found: error
+          retention-days: 14
+
+  agent_5_glb:
+    name: "Agent 5 — GLB export/import validation"
+    needs: agent_1_world
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: candyland-agent1-world
+          path: candyland/out
+      - name: Validate GLB files independently
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet trimesh numpy
+          python3 maps/candyland_dream/runtime/validate_glb.py candyland/out
+          test -s candyland/out/glb_validation.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open("candyland/out/glb_validation.json"))
+          print("GLB_VALIDATION",x)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent5-glb
+          path: |
+            candyland/out/candyland_dream_v03.glb
+            candyland/out/candy_props_v03.glb
+            candyland/out/glb_validation.json
+          if-no-files-found: error
+          retention-days: 14
+
+  agent_6_engine:
+    name: "Agent 6 — NZ:P/Vril map compiler compatibility"
+    needs: agent_5_glb
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Export Candyland NZ:P harness
+        env:
+          NZP_MAP_OUT: candyland/engine/candyland_harness.map
+        run: |
+          set -euo pipefail
+          python3 maps/candyland_dream/runtime/export_nzp_harness.py
+          test -s candyland/engine/candyland_harness.map
+      - name: Compile BSP and spawn zones with official NZ:P toolchain
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/nzp-assets /tmp/spawn-zone-tool
+          git clone --depth 1 https://github.com/nzp-team/assets.git /tmp/nzp-assets
+          git clone --depth 1 --recursive https://github.com/nzp-team/spawn-zone-tool.git /tmp/spawn-zone-tool
+          python3 -m pip install --quiet -r /tmp/spawn-zone-tool/requirements.txt
+          (
+            cd /tmp/nzp-assets
+            bash tools/compile-wads.sh
+            mkdir -p source/maps/candyland_harness
+            cp "$GITHUB_WORKSPACE/candyland/engine/candyland_harness.map" source/maps/candyland_harness/candyland_harness.map
+            bash tools/compile-maps.sh --map candyland_harness --zone-tool-path /tmp/spawn-zone-tool
+          ) 2>&1 | tee candyland/engine/compile.log
+          cp /tmp/nzp-assets/common/maps/candyland_harness.bsp candyland/engine/
+          test -s candyland/engine/candyland_harness.bsp
+          if [[ -s /tmp/nzp-assets/common/maps/candyland_harness.nsz ]]; then
+            cp /tmp/nzp-assets/common/maps/candyland_harness.nsz candyland/engine/
+          fi
+          test -s candyland/engine/candyland_harness.nsz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent6-engine
+          path: candyland/engine/
+          if-no-files-found: error
+          retention-days: 14
+
+  agent_7_android_qa:
+    name: "Agent 7 — Android runtime QA + final gate"
+    needs: [agent_2_assets, agent_4_cinematic, agent_6_engine]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: candyland-agent6-engine
+          path: candyland/engine
+      - name: Checkout Vril Android reference tooling
+        run: git clone --depth 1 https://github.com/1993velezpadilla-source/config-old-3.git engine-ref
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK, NDK and emulator
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "emulator" "system-images;android-35;google_apis;x86_64"
+      - name: Prepare Android project with Candyland BSP/NSZ
+        working-directory: engine-ref
+        env:
+          XZIEL_EXTRA_MAP_NAME: candyland_harness
+          XZIEL_EXTRA_MAP_BSP: ${{ github.workspace }}/candyland/engine/candyland_harness.bsp
+          XZIEL_EXTRA_MAP_NSZ: ${{ github.workspace }}/candyland/engine/candyland_harness.nsz
+        run: |
+          set -euo pipefail
+          bash scripts/prepare_android.sh
+          unzip -l build/android-project/app/src/main/assets/nzp-data.zip | grep -E 'nzp/maps/candyland_harness\.(bsp|nsz)'
+      - name: Build Candyland debug APK
+        working-directory: engine-ref/build/android-project
+        run: ./gradlew --no-daemon assembleDebug --stacktrace
+      - name: Collect APK
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp engine-ref/build/android-project/app/build/outputs/apk/debug/app-debug.apk dist/Xziel-Candyland-Harness-debug.apk
+      - name: Boot Candyland on Android emulator
+        id: smoke
+        continue-on-error: true
+        env:
+          ANDROID_AVD_HOME: ${{ runner.temp }}/xziel-candyland-avd
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_AVD_HOME" dist
+          ADB="${ANDROID_HOME}/platform-tools/adb"
+          EMULATOR="${ANDROID_HOME}/emulator/emulator"
+          AVDMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name avdmanager | sort | tail -n 1)"
+          printf 'no\n' | "$AVDMANAGER" create avd --force --name xziel-candyland-ci --package "system-images;android-35;google_apis;x86_64" --device "pixel_6"
+          if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm || true; fi
+          nohup "$EMULATOR" @xziel-candyland-ci -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -memory 2048 > dist/emulator-stdout.txt 2>&1 &
+          EMU_PID=$!
+          sleep 5
+          kill -0 "$EMU_PID"
+          timeout 120 "$ADB" wait-for-device
+          for i in $(seq 1 60); do
+            [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] && break
+            sleep 2
+          done
+          test "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1"
+          "$ADB" install -r dist/Xziel-Candyland-Harness-debug.apk
+          "$ADB" logcat -c
+          "$ADB" shell am force-stop com.xziel.nzp || true
+          "$ADB" shell am start -W -n com.xziel.nzp/org.libsdl.app.NZPActivity --es xziel_ci_map candyland_harness > dist/am-start.txt 2>&1 || true
+          sleep 30
+          "$ADB" exec-out screencap -p > dist/candyland-harness-a.png
+          sleep 3
+          "$ADB" exec-out screencap -p > dist/candyland-harness-b.png
+          "$ADB" logcat -d -v threadtime > dist/candyland-logcat.txt || true
+          "$ADB" shell dumpsys meminfo com.xziel.nzp > dist/candyland-meminfo.txt || true
+          python3 -m pip install --quiet pillow==11.3.0
+          python3 - <<'PY' | tee dist/candyland-visual-report.txt
+          from PIL import Image,ImageChops,ImageStat
+          ims=[]
+          for p in ["dist/candyland-harness-a.png","dist/candyland-harness-b.png"]:
+              im=Image.open(p).convert("RGB")
+              gray=im.convert("L")
+              st=ImageStat.Stat(gray)
+              lo,hi=gray.getextrema()
+              if im.width < 1000 or im.height < 500 or im.width <= im.height:
+                  raise SystemExit(f"bad screenshot dimensions {im.size}")
+              if hi-lo < 20 or st.stddev[0] < 6:
+                  raise SystemExit(f"blank/flat screenshot {p} extrema={(lo,hi)} std={st.stddev[0]:.2f}")
+              ims.append(im)
+              print(p,im.size,"mean",st.mean[0],"std",st.stddev[0],"extrema",(lo,hi))
+          diff=ImageChops.difference(ims[0],ims[1]).convert("L")
+          ds=ImageStat.Stat(diff)
+          print("frame_delta_mean",ds.mean[0],"frame_delta_std",ds.stddev[0])
+          PY
+          PID="$("$ADB" shell pidof com.xziel.nzp 2>/dev/null | tr -d '\r' || true)"
+          STAGE="$("$ADB" shell run-as com.xziel.nzp cat files/nzp-runtime/.xziel-stage 2>/dev/null | tr -d '\r' || true)"
+          echo "PID=$PID" | tee dist/runtime-state.txt
+          echo "STAGE=$STAGE" | tee -a dist/runtime-state.txt
+          "$ADB" shell run-as com.xziel.nzp ls -l files/nzp-runtime/nzp/maps/ > dist/runtime-map-files.txt 2>&1 || true
+          grep -Ei "candyland_harness|CANDYLAND DREAM|Host_Map|maps/" dist/candyland-logcat.txt | tail -n 500 > dist/candyland-map-log-highlights.txt || true
+          if grep -Eq "Fatal signal|FATAL EXCEPTION|EGL_BAD_CONTEXT|stage=SYS_ERROR" dist/candyland-logcat.txt; then exit 1; fi
+          test -n "$PID"
+          test "$STAGE" = "FIRST_FRAME_OK"
+      - name: Write final seven-agent QA report
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, os
+          p=pathlib.Path("dist")
+          state=(p/"runtime-state.txt").read_text(errors="ignore") if (p/"runtime-state.txt").exists() else ""
+          report={
+            "pipeline":"Candyland Dream Seven-Agent Production Pipeline",
+            "agents":7,
+            "android_smoke_outcome":"${{ steps.smoke.outcome }}",
+            "runtime_state":state.strip(),
+            "artifacts_expected":[
+              "candyland-agent1-world",
+              "candyland-agent2-assets",
+              "candyland-agent3-audio",
+              "candyland-agent4-cinematic",
+              "candyland-agent5-glb",
+              "candyland-agent6-engine",
+              "candyland-agent7-final"
+            ]
+          }
+          p.mkdir(exist_ok=True)
+          json.dump(report,open(p/"seven-agent-report.json","w"),indent=2)
+          PY
+      - name: Upload Android QA and final report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent7-final
+          path: |
+            dist/Xziel-Candyland-Harness-debug.apk
+            dist/candyland-harness-a.png
+            dist/candyland-harness-b.png
+            dist/candyland-visual-report.txt
+            dist/candyland-logcat.txt
+            dist/candyland-map-log-highlights.txt
+            dist/candyland-meminfo.txt
+            dist/runtime-state.txt
+            dist/runtime-map-files.txt
+            dist/am-start.txt
+            dist/emulator-stdout.txt
+            dist/seven-agent-report.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Fail if Android engine smoke failed
+        if: steps.smoke.outcome == 'failure'
+        run: exit 1
