@@ -1,0 +1,279 @@
+name: Candyland Dream Five-Agent Runtime Pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/candyland-five-agent-pipeline.yml"
+      - "maps/candyland_dream/**"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: candyland-five-agent-${ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent_1_blender:
+    name: "Agent 1 — Blender scene + preview execution"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Blender runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq blender xvfb libegl1 libgl1-mesa-dri libglx-mesa0
+          blender --version
+      - name: Execute Candyland Blender build
+        env:
+          CANDY_OUT: candyland/out
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p candyland/out
+          xvfb-run -a -s "-screen 0 1600x1000x24" blender --background --python maps/candyland_dream/blender/build_candyland_v03.py 2>&1 | tee candyland/out/blender.log
+          for f in candyland_dream_v03.blend candyland_dream_v03.glb candy_props_v03.glb candyland_iso.png candyland_spawn_view.png candyland_castle_view.png blender_report.json; do
+            test -s "candyland/out/$f"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent1-blender
+          path: candyland/out/
+          if-no-files-found: error
+          retention-days: 14
+
+  agent_2_assets:
+    name: "Agent 2 — Procedural 3D asset generation"
+    needs: agent_1_blender
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: candyland-agent1-blender
+          path: candyland/out
+      - name: Verify generated candy props and pictures
+        run: |
+          set -euo pipefail
+          test -s candyland/out/candy_props_v03.glb
+          test -s candyland/out/candyland_iso.png
+          python3 - <<'PY'
+          import json
+          r=json.load(open("candyland/out/blender_report.json"))
+          assert r["status"]=="BLENDER_EXECUTED", r
+          assert r["procedural_asset_objects"] >= 10, r
+          assert r["visual_meshes"] >= 25, r
+          print("PROCEDURAL_ASSET_GENERATION_OK", r)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent2-assets
+          path: |
+            candyland/out/candy_props_v03.glb
+            candyland/out/candyland_iso.png
+            candyland/out/candyland_spawn_view.png
+            candyland/out/candyland_castle_view.png
+            candyland/out/blender_report.json
+          if-no-files-found: error
+          retention-days: 14
+
+  agent_3_glb:
+    name: "Agent 3 — GLB export/import validation"
+    needs: agent_2_assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: candyland-agent1-blender
+          path: candyland/out
+      - name: Validate GLB files by importing them
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet trimesh numpy
+          python3 maps/candyland_dream/runtime/validate_glb.py candyland/out
+          test -s candyland/out/glb_validation.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent3-glb
+          path: |
+            candyland/out/candyland_dream_v03.glb
+            candyland/out/candy_props_v03.glb
+            candyland/out/glb_validation.json
+          if-no-files-found: error
+          retention-days: 14
+
+  agent_4_engine:
+    name: "Agent 4 — NZ:P/Vril map compiler compatibility"
+    needs: agent_3_glb
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Export Candyland NZ:P harness
+        env:
+          NZP_MAP_OUT: candyland/engine/candyland_harness.map
+        run: |
+          set -euo pipefail
+          python3 maps/candyland_dream/runtime/export_nzp_harness.py
+          test -s candyland/engine/candyland_harness.map
+      - name: Compile BSP and spawn zones with official NZ:P toolchain
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/nzp-assets /tmp/spawn-zone-tool
+          git clone --depth 1 https://github.com/nzp-team/assets.git /tmp/nzp-assets
+          git clone --depth 1 --recursive https://github.com/nzp-team/spawn-zone-tool.git /tmp/spawn-zone-tool
+          python3 -m pip install --quiet -r /tmp/spawn-zone-tool/requirements.txt
+          (
+            cd /tmp/nzp-assets
+            bash tools/compile-wads.sh
+            mkdir -p source/maps/candyland_harness
+            cp "$GITHUB_WORKSPACE/candyland/engine/candyland_harness.map" source/maps/candyland_harness/candyland_harness.map
+            bash tools/compile-maps.sh --map candyland_harness --zone-tool-path /tmp/spawn-zone-tool
+          ) 2>&1 | tee candyland/engine/compile.log
+          cp /tmp/nzp-assets/common/maps/candyland_harness.bsp candyland/engine/
+          test -s candyland/engine/candyland_harness.bsp
+          if [[ -s /tmp/nzp-assets/common/maps/candyland_harness.nsz ]]; then
+            cp /tmp/nzp-assets/common/maps/candyland_harness.nsz candyland/engine/
+          fi
+          test -s candyland/engine/candyland_harness.nsz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent4-engine-harness
+          path: candyland/engine/
+          if-no-files-found: error
+          retention-days: 14
+
+  agent_5_android:
+    name: "Agent 5 — Vril Android emulator first-frame smoke"
+    needs: agent_4_engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: candyland-agent4-engine-harness
+          path: candyland/engine
+      - name: Checkout public Xziel/Vril Android reference tooling
+        run: git clone --depth 1 https://github.com/1993velezpadilla-source/config-old-3.git engine-ref
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK, NDK and emulator
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "emulator" "system-images;android-35;google_apis;x86_64"
+      - name: Prepare Vril Android project with Candyland BSP/NSZ
+        working-directory: engine-ref
+        env:
+          XZIEL_EXTRA_MAP_NAME: candyland_harness
+          XZIEL_EXTRA_MAP_BSP: ${ github.workspace }}/candyland/engine/candyland_harness.bsp
+          XZIEL_EXTRA_MAP_NSZ: ${ github.workspace }}/candyland/engine/candyland_harness.nsz
+        run: |
+          set -euo pipefail
+          bash scripts/prepare_android.sh
+          unzip -l build/android-project/app/src/main/assets/nzp-data.zip | grep -E 'nzp/maps/candyland_harness\.(bsp|nsz)'
+      - name: Build Candyland debug APK
+        working-directory: engine-ref/build/android-project
+        run: ./gradlew --no-daemon assembleDebug --stacktrace
+      - name: Collect APK
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp engine-ref/build/android-project/app/build/outputs/apk/debug/app-debug.apk dist/Xziel-Candyland-Harness-debug.apk
+      - name: Boot Candyland on Android emulator
+        id: smoke
+        continue-on-error: true
+        env:
+          ANDROID_AVD_HOME: ${ runner.temp }}/xziel-candyland-avd
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_AVD_HOME" dist
+          ADB="${ANDROID_HOME}/platform-tools/adb"
+          EMULATOR="${ANDROID_HOME}/emulator/emulator"
+          AVDMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name avdmanager | sort | tail -n 1)"
+          printf 'no\n' | "$AVDMANAGER" create avd --force --name xziel-candyland-ci --package "system-images;android-35;google_apis;x86_64" --device "pixel_6"
+          if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm || true; fi
+          nohup "$EMULATOR" @xziel-candyland-ci -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -memory 2048 > dist/emulator-stdout.txt 2>&1 &
+          EMU_PID=$!
+          sleep 5
+          kill -0 "$EMU_PID"
+          timeout 120 "$ADB" wait-for-device
+          for i in $(seq 1 60); do
+            [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] && break
+            sleep 2
+          done
+          test "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1"
+          "$ADB" install -r dist/Xziel-Candyland-Harness-debug.apk
+          "$ADB" logcat -c
+          "$ADB" shell am force-stop com.xziel.nzp || true
+          "$ADB" shell am start -W -n com.xziel.nzp/org.libsdl.app.NZPActivity --es xziel_ci_map candyland_harness > dist/am-start.txt 2>&1 || true
+          sleep 30
+          "$ADB" exec-out screencap -p > dist/candyland-harness-a.png
+          sleep 3
+          "$ADB" exec-out screencap -p > dist/candyland-harness-b.png
+          "$ADB" logcat -d -v threadtime > dist/candyland-logcat.txt || true
+          "$ADB" shell dumpsys meminfo com.xziel.nzp > dist/candyland-meminfo.txt || true
+          python3 -m pip install --quiet pillow==11.3.0
+          python3 - <<'PY' | tee dist/candyland-visual-report.txt
+          from PIL import Image, ImageChops, ImageStat
+          ims=[]
+          for p in ["dist/candyland-harness-a.png","dist/candyland-harness-b.png"]:
+              im=Image.open(p).convert("RGB")
+              gray=im.convert("L")
+              st=ImageStat.Stat(gray)
+              lo,hi=gray.getextrema()
+              if im.width < 1000 or im.height < 500 or im.width <= im.height:
+                  raise SystemExit(f"bad screenshot dimensions {im.size}")
+              if hi-lo < 20 or st.stddev[0] < 6:
+                  raise SystemExit(f"blank/flat screenshot {p} extrema={(lo,hi)} std={st.stddev[0]:.2f}")
+              ims.append(im)
+              print(p, im.size, "mean", st.mean[0], "std", st.stddev[0], "extrema", (lo,hi))
+          diff=ImageChops.difference(ims[0],ims[1]).convert("L")
+          ds=ImageStat.Stat(diff)
+          print("frame_delta_mean",ds.mean[0],"frame_delta_std",ds.stddev[0])
+          PY
+          PID="$("$ADB" shell pidof com.xziel.nzp 2>/dev/null | tr -d '\r' || true)"
+          STAGE="$("$ADB" shell run-as com.xziel.nzp cat files/nzp-runtime/.xziel-stage 2>/dev/null | tr -d '\r' || true)"
+          echo "PID=$PID" | tee dist/runtime-state.txt
+          echo "STAGE=$STAGE" | tee -a dist/runtime-state.txt
+          "$ADB" shell run-as com.xziel.nzp ls -l files/nzp-runtime/nzp/maps/ > dist/runtime-map-files.txt 2>&1 || true
+          grep -Ei "candyland_harness|CANDYLAND DREAM|Host_Map|maps/" dist/candyland-logcat.txt | tail -n 500 > dist/candyland-map-log-highlights.txt || true
+          if grep -Eq "Fatal signal|FATAL EXCEPTION|EGL_BAD_CONTEXT|stage=SYS_ERROR" dist/candyland-logcat.txt; then
+            exit 1
+          fi
+          test -n "$PID"
+          test "$STAGE" = "FIRST_FRAME_OK"
+      - name: Upload Candyland APK, engine screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candyland-agent5-android-runtime
+          path: |
+            dist/Xziel-Candyland-Harness-debug.apk
+            dist/candyland-harness-a.png
+            dist/candyland-harness-b.png
+            dist/candyland-visual-report.txt
+            dist/candyland-logcat.txt
+            dist/candyland-map-log-highlights.txt
+            dist/candyland-meminfo.txt
+            dist/runtime-state.txt
+            dist/runtime-map-files.txt
+            dist/am-start.txt
+            dist/emulator-stdout.txt
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Fail if Android engine smoke failed
+        if: steps.smoke.outcome == 'failure'
+        run: exit 1
