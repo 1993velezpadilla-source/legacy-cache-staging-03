@@ -299,12 +299,13 @@ scene=bpy.context.scene; scene.render.resolution_x=1280; scene.render.resolution
 try: scene.render.engine="BLENDER_EEVEE_NEXT"
 except Exception: scene.render.engine="BLENDER_EEVEE"
 
-for name,loc,target in [
-    ("candyland_iso",(88,-100,76),(0,2,3)),
-    ("candyland_spawn_view",(-45,-43,11),(-13,-7,3.5)),
-    ("candyland_castle_view",(55,-2,27),(28,24,6.5)),
-]:
-    cam.location=loc; look_at(cam,target); scene.render.filepath=str(OUT/f"{name}.png"); bpy.ops.render.render(write_still=True)
+if os.environ.get("CANDY_DEFER_INTERMEDIATE_RENDERS","0")!="1":
+    for name,loc,target in [
+        ("candyland_iso",(88,-100,76),(0,2,3)),
+        ("candyland_spawn_view",(-45,-43,11),(-13,-7,3.5)),
+        ("candyland_castle_view",(55,-2,27),(28,24,6.5)),
+    ]:
+        cam.location=loc; look_at(cam,target); scene.render.filepath=str(OUT/f"{name}.png"); bpy.ops.render.render(write_still=True)
 
 for o in bpy.context.scene.objects: o.select_set(False)
 visual=[]

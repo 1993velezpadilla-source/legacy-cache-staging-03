@@ -7,6 +7,10 @@ from pathlib import Path
 import bpy, json, math, os
 from mathutils import Vector
 
+# v0.7 is the only pass that needs final beauty renders. Older inherited
+# generators still build all geometry/materials/metadata but skip redundant shots.
+os.environ["CANDY_DEFER_INTERMEDIATE_RENDERS"]="1"
+
 BASE=Path(__file__).with_name("build_candyland_v06.py")
 exec(compile(BASE.read_text(encoding="utf-8"),str(BASE),"exec"),globals())
 

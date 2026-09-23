@@ -395,10 +395,11 @@ shots=[
     ("candyland_river_view",(43,-20,18),(18,5,2.5)),
     ("candyland_gloss_closeup",(-26,-32,9),(-9,-7,3.0)),
 ]
-for name,loc,target in shots:
-    cam.location=loc; look_at(cam,target)
-    scene.render.filepath=str(OUT/f"{name}.png")
-    bpy.ops.render.render(write_still=True)
+if os.environ.get("CANDY_DEFER_INTERMEDIATE_RENDERS","0")!="1":
+    for name,loc,target in shots:
+        cam.location=loc; look_at(cam,target)
+        scene.render.filepath=str(OUT/f"{name}.png")
+        bpy.ops.render.render(write_still=True)
 
 # ---------------------------------------------------------------------------
 # Compatibility exports from the actually restyled map.

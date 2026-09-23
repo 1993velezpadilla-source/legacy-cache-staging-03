@@ -209,11 +209,12 @@ shots=[
     ("candyland_forest_view",(-58,2,18),(-29,23,4.5)),
     ("candyland_river_view",(43,-20,18),(18,5,2.5)),
 ]
-for name,loc,target in shots:
-    cam.location=loc
-    look_at(cam,target)
-    scene.render.filepath=str(OUT/f"{name}.png")
-    bpy.ops.render.render(write_still=True)
+if os.environ.get("CANDY_DEFER_INTERMEDIATE_RENDERS","0")!="1":
+    for name,loc,target in shots:
+        cam.location=loc
+        look_at(cam,target)
+        scene.render.filepath=str(OUT/f"{name}.png")
+        bpy.ops.render.render(write_still=True)
 
 # ---------- overwrite compatibility exports with enriched v0.5 ----------
 for o in bpy.context.scene.objects:
