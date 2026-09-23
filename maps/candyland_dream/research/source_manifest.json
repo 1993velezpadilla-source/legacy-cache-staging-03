@@ -1,8 +1,53 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "project": "Candyland Dream",
   "maintained_by": "agent-c-research",
-  "sources": [],
+  "sources": [
+    {
+      "name": "InstantMesh",
+      "url": "https://github.com/TencentARC/InstantMesh",
+      "version_or_commit": "main (verify/pin before production)",
+      "license": "Apache-2.0",
+      "redistribution": "code permitted under Apache-2.0; verify model/dependency licenses before bundling",
+      "intended_use": "single-image mesh generation fallback/alternative for Agent B",
+      "runtime_requirements": "GPU-oriented PyTorch stack; model-specific VRAM to benchmark before CI use",
+      "status": "conditional",
+      "notes": "Official implementation; useful alternative to TRELLIS/TripoSR."
+    },
+    {
+      "name": "Instant Meshes",
+      "url": "https://github.com/wjakob/instant-meshes",
+      "version_or_commit": "master (verify/pin before production)",
+      "license": "BSD-3-Clause-style with enhancement grant language",
+      "redistribution": "permitted with notices/conditions",
+      "intended_use": "retopology/mesh cleanup for generated assets",
+      "runtime_requirements": "native desktop/CLI build; suitable as offline cleanup stage",
+      "status": "approved",
+      "notes": "Good candidate for automatic retopology after image-to-3D."
+    },
+    {
+      "name": "pyinstantmeshes",
+      "url": "https://github.com/greenbrettmichael/pyinstantmeshes",
+      "version_or_commit": "main (verify/pin before production)",
+      "license": "BSD-3-Clause",
+      "redistribution": "permitted with notices/conditions",
+      "intended_use": "Python wrapper for Instant Meshes to simplify Agent B automation",
+      "runtime_requirements": "Python + compiled wrapper/library",
+      "status": "conditional",
+      "notes": "Promising for scripted retopology; test Linux CI build before adoption."
+    },
+    {
+      "name": "Open3D",
+      "url": "https://github.com/isl-org/Open3D",
+      "version_or_commit": "main (verify/pin before production)",
+      "license": "MIT",
+      "redistribution": "permitted with MIT notice",
+      "intended_use": "mesh inspection, cleanup, simplification, geometry QA",
+      "runtime_requirements": "Python/C++ package; CPU-capable for many mesh operations",
+      "status": "approved",
+      "notes": "Strong support utility for Agent D QA and Agent B cleanup."
+    }
+  ],
   "required_fields": [
     "name",
     "url",
