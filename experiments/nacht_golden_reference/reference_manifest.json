@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "map": {
+    "display_name": "Nacht der Untoten",
+    "internal_name": "nazi_zombie_prototype",
+    "reference_bsp": "maps/nazi_zombie_prototype.d3dbsp"
+  },
+  "public_mod_tools_reference": {
+    "repository": "CallOfDutyModding/call_of_duty_world_at_war_mod_tools",
+    "manifest": "zone_source/nazi_zombie_prototype.csv",
+    "gameplay_script": "raw/maps/nazi_zombie_prototype.gsc",
+    "fx_script": "raw/maps/nazi_zombie_prototype_fx.gsc",
+    "art_script": "raw/maps/createart/nazi_zombie_prototype_art.gsc"
+  },
+  "core_references": {
+    "skybox": ["skybox_zombie"],
+    "viewmodels": ["viewmodel_usa_marine_arms", "viewmodel_usa_marine_player"],
+    "destructibles": [
+      "exploding_barrel_test",
+      "exploding_barrel_test_d",
+      "global_explosive_barrel_japanese"
+    ]
+  },
+  "weapons": [
+    "colt",
+    "colt_dirty_harry",
+    "m1garand",
+    "kar98k_scoped_zombie",
+    "kar98k",
+    "fraggrenade",
+    "m2_flamethrower_zombie",
+    "molotov",
+    "doublebarrel",
+    "m1carbine",
+    "fg42_bipod",
+    "doublebarrel_sawed_grip",
+    "gewehr43",
+    "ptrs41_zombie",
+    "shotgun",
+    "stg44",
+    "thompson",
+    "mp40",
+    "mg42_bipod",
+    "bar",
+    "springfield",
+    "m1garand_gl",
+    "panzerschrek",
+    "mk2_frag",
+    "m7_launcher",
+    "walther",
+    "sw_357",
+    "30cal_bipod",
+    "zombie_colt",
+    "stielhandgranate",
+    "ray_gun"
+  ],
+  "sound_groups": [
+    "common",
+    "generic",
+    "voiceovers",
+    "requests",
+    "character",
+    "projectiles",
+    "nazi_zombie_prototype",
+    "physics",
+    "destructibles"
+  ],
+  "fx_groups": [
+    "smoke",
+    "fire",
+    "ash_and_embers",
+    "water_drips",
+    "wire_sparks",
+    "dust_motes",
+    "god_rays",
+    "fog",
+    "falling_leaves",
+    "dynamic_fire_glow",
+    "footstep_dust",
+    "footstep_water",
+    "footstep_sand",
+    "footstep_mud",
+    "zombie_couch_poltergeist"
+  ],
+  "gameplay_checks": [
+    "player_spawn",
+    "zombie_spawn",
+    "window_approach",
+    "barrier_break",
+    "barrier_rebuild",
+    "zombie_navigation",
+    "zombie_attack",
+    "player_damage",
+    "weapon_wall_buy",
+    "mystery_box",
+    "powerups",
+    "round_progression",
+    "out_of_bounds",
+    "high_round_scaling"
+  ],
+  "status": {
+    "dependency_graph": "KNOWN_FROM_PUBLIC_MOD_TOOLS",
+    "retail_binary_payloads": "NOT_COMMITTED",
+    "xziel_import": "PENDING",
+    "android_visual_match": "PENDING",
+    "stress_validation": "PENDING"
+  }
+}
