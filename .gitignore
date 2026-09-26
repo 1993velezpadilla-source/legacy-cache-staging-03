@@ -1,0 +1,4 @@
+# Benchmark staging generated locally; do not commit copied third-party binaries.
+experiments/nacht_golden_reference/stage/
+experiments/nacht_golden_reference/local_assets/
+experiments/nacht_golden_reference/runtime_extract/
