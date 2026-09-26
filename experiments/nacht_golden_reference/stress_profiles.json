@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "benchmark": "nacht_golden_reference",
+  "profiles": [
+    {
+      "id": "baseline_round_1",
+      "description": "Normal gameplay control.",
+      "god_mode": false,
+      "start_round": 1,
+      "zombie_cap": 24,
+      "spawn_rate_multiplier": 1.0,
+      "damage_multiplier_to_player": 1.0,
+      "infinite_ammo": false,
+      "target_duration_seconds": 600
+    },
+    {
+      "id": "god_round_30",
+      "description": "Gameplay/AI soak without player death terminating the run.",
+      "god_mode": true,
+      "start_round": 30,
+      "zombie_cap": 24,
+      "spawn_rate_multiplier": 1.0,
+      "damage_multiplier_to_player": 0.0,
+      "infinite_ammo": true,
+      "target_duration_seconds": 900
+    },
+    {
+      "id": "god_round_100",
+      "description": "High-round logic and health-scaling stress.",
+      "god_mode": true,
+      "start_round": 100,
+      "zombie_cap": 24,
+      "spawn_rate_multiplier": 1.5,
+      "damage_multiplier_to_player": 0.0,
+      "infinite_ammo": true,
+      "target_duration_seconds": 900
+    },
+    {
+      "id": "spawn_pressure_48",
+      "description": "Engine pressure test above the current 24-AI Android build target. Requires a benchmark build with a raised AI cap.",
+      "god_mode": true,
+      "start_round": 50,
+      "zombie_cap": 48,
+      "spawn_rate_multiplier": 2.0,
+      "damage_multiplier_to_player": 0.0,
+      "infinite_ammo": true,
+      "target_duration_seconds": 600
+    },
+    {
+      "id": "spawn_pressure_96",
+      "description": "Destructive lab-only scalability test. Never a shipping default.",
+      "god_mode": true,
+      "start_round": 100,
+      "zombie_cap": 96,
+      "spawn_rate_multiplier": 4.0,
+      "damage_multiplier_to_player": 0.0,
+      "infinite_ammo": true,
+      "target_duration_seconds": 300
+    }
+  ],
+  "telemetry_required": [
+    "fps_avg",
+    "fps_1pct_low",
+    "frame_time_ms_p50",
+    "frame_time_ms_p95",
+    "frame_time_ms_p99",
+    "active_zombies_peak",
+    "spawned_zombies_total",
+    "nav_updates_per_second",
+    "draw_calls",
+    "triangles_visible",
+    "texture_memory_mb",
+    "process_rss_mb",
+    "java_heap_mb",
+    "native_heap_mb",
+    "gpu_memory_mb_if_available",
+    "device_temperature_c_if_available",
+    "crash_or_anr",
+    "runtime_seconds"
+  ]
+}
