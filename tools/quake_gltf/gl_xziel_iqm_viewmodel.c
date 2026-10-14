@@ -10,7 +10,6 @@
  * Invalid/unavailable IQM -> original MDL is drawn.
  */
 #include "../../../nzportable_def.h"
-#include "gl_main.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
