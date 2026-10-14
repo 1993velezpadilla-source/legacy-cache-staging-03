@@ -107,7 +107,8 @@ static int xiqm_load(const char *mdlpath) {
     int file_len;
     uint32_t text_count, ofs_text, mesh_count, ofs_meshes;
     uint32_t va_count, vertex_count, ofs_va, tri_count, ofs_tri;
-    uint32_t position_offset = 0, uv_offset = 0;
+    uint32_t position_offset = 0, uv_offset = 0, bone_offset = 0, weight_offset = 0;
+    int has_indices = 0, has_weights = 0;
     unsigned i, j;
     int has_position = 0, has_uv = 0, ok = 0;
     size_t len, stem_len;
@@ -158,6 +159,12 @@ static int xiqm_load(const char *mdlpath) {
         } else if (type == 1 && format == 7 && components == 2 &&
                    xiqm_span(file_len, offset, vertex_count, 8)) {
             has_uv = 1; uv_offset = offset;
+        } else if (type == 4 && format == 1 && components == 4 &&
+                   xiqm_span(file_len, offset, vertex_count, 4)) {
+            has_indices = 1; bone_offset = offset;
+        } else if (type == 5 && format == 1 && components == 4 &&
+                   xiqm_span(file_len, offset, vertex_count, 4)) {
+            has_weights = 1; weight_offset = offset;
         }
     }
     if (!has_position) goto done;
@@ -177,6 +184,11 @@ static int xiqm_load(const char *mdlpath) {
             if (has_uv) {
                 out->uv[0] = xiqm_f32(buf + uv_offset + 8u*index);
                 out->uv[1] = xiqm_f32(buf + uv_offset + 8u*index+4);
+            }
+            memcpy(out->bind,out->p,sizeof(out->bind));
+            if (has_indices && has_weights) {
+                memcpy(out->indices,buf+bone_offset+4u*index,4);
+                memcpy(out->weights,buf+weight_offset+4u*index,4);
             }
         }
     }
