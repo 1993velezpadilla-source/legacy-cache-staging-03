@@ -93,3 +93,31 @@ static int xza_decode(const xzanim *a,unsigned frame,float out[XZA_BONES][10]){
  }
  return pos==a->channels;
 }
+/* Explicit preview clip; never infer QuakeC event timing from this clock. */
+static int xza_eval(xzanim *a,unsigned clip_id,float seconds){
+ float f,alpha,first[XZA_BONES][10],second[XZA_BONES][10],v[10];
+ xzmatrix world[XZA_BONES],local;
+ unsigned j,k,p,q;
+ const xzclip *c;
+ if(clip_id>=a->clips||!a->weighted||!isfinite(seconds))return 0;
+ c=&a->clip[clip_id];
+ f=fmaxf(0,seconds)*c->fps;
+ if(c->flags&1)f=fmodf(f,c->count);
+ else f=fminf(f,c->count-1);
+ p=(unsigned)f;alpha=f-p;q=p+1;
+ if(q>=c->count)q=(c->flags&1)?0:p;
+ if(!xza_decode(a,c->first+p,first)||!xza_decode(a,c->first+q,second))return 0;
+ for(j=0;j<a->joints;j++){
+    int parent=a->pose[j].parent;
+    float dot=0,sign=1;
+    for(k=3;k<7;k++)dot+=first[j][k]*second[j][k];
+    if(dot<0)sign=-1;
+    for(k=0;k<10;k++)v[k]=first[j][k]+alpha*((k>=3&&k<7?sign:1)*second[j][k]-first[j][k]);
+    if(!xzm_trs(&local,v))return 0;
+    if(parent>=0)xzm_mul(&world[j],&world[parent],&local);
+    else world[j]=local;
+    xzm_mul(&a->skin[j],&world[j],&a->inverse[j]);
+ }
+ return 1;
+}
+#endif
