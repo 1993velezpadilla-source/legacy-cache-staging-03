@@ -54,10 +54,12 @@ jobs:
             https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/RiggedSimple/glTF-Binary/RiggedSimple.glb
           curl --fail --location --retry 3 --silent --show-error -o work/BoxAnimated.glb \
             https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/BoxAnimated/glTF-Binary/BoxAnimated.glb
+      - name: Generate a 20K triangle GLB model (no decimation)
+        run: python3 tools/quake_gltf/generate_dense_glb.py
       - name: GLB to IQM conversion and geometry/skin/animation parity
         run: |
           set -euxo pipefail
-          for item in RiggedSimple BoxAnimated; do
+          for item in RiggedSimple BoxAnimated Synthetic20K; do
             python3 tools/quake_gltf/preflight.py "work/$item.glb" | tee "work/$item.source.json"
             ./fte-build/iqmtool "work/$item.iqm" "work/$item.glb"
             test -s "work/$item.iqm"
