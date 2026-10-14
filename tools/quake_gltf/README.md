@@ -1,6 +1,6 @@
 # Vril / NZ:P — GLB & high-fidelity model intake (2026-10-14)
 
-Status: **PREFLIGHT TOOL TESTED LOCALLY**; **NO GLB IMPORTER OR APK BUILT**. Development branch is not production. The first job is to stop damaging sources by blindly converting them to legacy Quake MDL.
+Status (2026-10-14): GLB→IQM conversion **GREEN in real GitHub Actions**, including original 20,000-triangle generated geometry (unchanged triangle count). Optional **static IQM viewmodel runtime sidecar has compiled and linked in upstream Vril SDL Linux**; **no skeletal runtime skinning, verified Vril render screenshot, Android build, or APK yet**. Development branch is not production. The first job is to stop damaging sources by blindly converting them to legacy Quake MDL.
 
 ## Verified upstream components
 - **FTEQW iqmtool**: accepts .gltf and .glb and converts to .iqm or .mdl. Reference: https://github.com/fte-team/fteqw (see ftetools_readme.txt, IQM TOOL). The .iqm path preserves skeletal animation and is preferable to baking frames into MDL. That does **not** mean current Android Vril loads IQM.
@@ -27,3 +27,21 @@ Status: **PREFLIGHT TOOL TESTED LOCALLY**; **NO GLB IMPORTER OR APK BUILT**. Dev
 No polygon decimation, no automatic texture resolution reduction, no 46-frame bake as the preferred path. Multi-material and PBR fidelity are **renderer features**, not properties a file converter can guarantee. Do not import proprietary commercial game assets into public repos without licensing rights. The preflight script is read-only and reports metadata; it cannot prove normals, topology, occlusion or rendering correctness.
 
 Run unit tests with `cd tools/quake_gltf && python3 -m unittest -v` and inventory with `python3 tools/quake_gltf/preflight.py mp40.glb --triangle-budget 16384`. Optional triangle budget is just a warning and may not reflect the active engine build.
+
+## IQM runtime integration — Stage 1 (implemented; opt-in only)
+- `tools/quake_gltf/patch_vril_iqm.py <vril-root>` copies `gl_xziel_iqm_viewmodel.c` and wires the Vril SDL **first-person weapon AND view2 model** draw calls to the sidecar renderer.
+- `xziel_iqm_viewmodels` console variable defaults to `0`. Normal gameplay continues rendering original MDL; **QuakeC gameplay, frame timing, physics, bullet hit traces, damage, and legacy model contents are untouched**.
+- When enabled, a model named `models/weapons/yourgun/v_yourgun.mdl` checks for `models/weapons/yourgun/v_yourgun.iqm`. If absent/malformed, original MDL renders as usual.
+- IQM loader validates file magic/size, vertex/index/batch ranges, material text offsets, and GL float POSITION / UV0. Draws **ALL original triangles** using expanded client arrays, so GL ES does not depend on the `GL_UNSIGNED_INT` index extension. Geometry at this stage uses **bind pose**, not animation.
+- Per-mesh materials resolve from the model directory as `<sanitized-material-name>.png`, `.tga`, or `.jpg`. Use `python3 tools/quake_gltf/extract_basecolor.py MP40.glb --output models/weapons/mp40` to extract matching **base-color** images without recompression. The extractor does not manufacture normal/metallic/roughness shaders.
+- Optional conversion: `iqmtool models/weapons/mp40/v_mp40.iqm MP40.glb` (FTEQW tool tested in CI, but original MP40 asset has NOT been obtained/tested).
+- Safety: sidecars are loaded on render thread when their corresponding original viewmodel first appears; heap allocations are limited to model changes. Turn preview back off with `xziel_iqm_viewmodels 0`.
+- Current Vril static stage does **not** handle skinning, animation clips, skeletal attachment maps, muzzle/hand correspondence or transparency/PBR. Do not promote to production solely based on CI Linux success.
+- Current runtime compile check: `.github/workflows/quake-vril-iqm-runtime.yml`. Real conversion check: `.github/workflows/quake-gltf-preflight.yml`.
+
+### Real verification to earn promotion
+1. Add rights-cleared MP40 GLB, export IQM and base-color texture images *without geometry/texture downscaling*.
+2. On Linux/Android render, compare weapon at identical camera angle and pose to GLB source. Check winding, normals, UV seams, material split, facing direction.
+3. Add animation pose/skinning and event-to-clip mapping; validate load, fire, reload, ADS and magazine with original timings (not `cl.time` arbitrary looping).
+4. Build original Android ARM64 APK using our full XZIEL SDL2/GL4ES project and test on a real Pixel Fold; capture inline screenshots from live rendering.
+5. Certify fps/memory, correct restore of all modified GL states, and MDL fallback under missing or corrupt IQM.
