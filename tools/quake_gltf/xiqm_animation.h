@@ -77,3 +77,19 @@ static int xza_load(xzanim *a,const unsigned char *buf,size_t len){
  }
  return 1;
 }
+static int xza_decode(const xzanim *a,unsigned frame,float out[XZA_BONES][10]){
+ unsigned i,k,pos=0;
+ if(frame>=a->frames||a->poses!=a->joints)return 0;
+ for(i=0;i<a->poses;i++){
+    const xzpose *p=&a->pose[i];
+    for(k=0;k<10;k++){
+        float v=p->offset[k];
+        if(p->mask&(1u<<k)){
+            if(pos>=a->channels||!a->samples)return 0;
+            v+=a->samples[(size_t)frame*a->channels+pos++]*p->scale[k];
+        }
+        out[i][k]=v;
+    }
+ }
+ return pos==a->channels;
+}
