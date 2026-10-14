@@ -41,3 +41,39 @@ static int xza_load(xzanim *a,const unsigned char *buf,size_t len){
     else world[i]=local;
     if(!xzm_inv(&a->inverse[i],&world[i]))return 0;
  }
+ for(i=0;i<poses;i++){
+    const unsigned char *p=buf+po+i*88;
+    xzpose *dst=&a->pose[i];
+    dst->parent=(int32_t)xiqm_u32(p);
+    dst->mask=xiqm_u32(p+4);
+    if(dst->mask&~1023u||dst->parent!=a->joint[i].parent)return 0;
+    for(k=0;k<10;k++){
+        dst->offset[k]=xiqm_f32(p+8+4*k);
+        dst->scale[k]=xiqm_f32(p+48+4*k);
+        if(!isfinite(dst->offset[k])||!isfinite(dst->scale[k]))return 0;
+        if(dst->mask&(1u<<k))total++;
+    }
+ }
+ if(total!=channels)return 0;
+ for(i=0;i<clips;i++){
+    const unsigned char *p=buf+co+i*20;
+    const char *name=xiqm_name(buf+to,text_count,xiqm_u32(p));
+    xzclip *clip=&a->clip[i];
+    if(!name)return 0;
+    xiqm_strncpy(clip->name,sizeof(clip->name),name);
+    clip->first=xiqm_u32(p+4);clip->count=xiqm_u32(p+8);
+    clip->fps=xiqm_f32(p+12);clip->flags=xiqm_u32(p+16);
+    if(clip->first>frames||clip->count>frames-clip->first||
+       !clip->count||!isfinite(clip->fps)||clip->fps<=0)return 0;
+ }
+ if(channels){
+    size_t count=(size_t)frames*channels;
+    a->samples=(uint16_t*)malloc(count*sizeof(uint16_t));
+    if(!a->samples)return 0;
+    for(i=0;i<count;i++){
+        const unsigned char *p=buf+fo+2*i;
+        a->samples[i]=(uint16_t)(p[0]|((unsigned)p[1]<<8));
+    }
+ }
+ return 1;
+}
