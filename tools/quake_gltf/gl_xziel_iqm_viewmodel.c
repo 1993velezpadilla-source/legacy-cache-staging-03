@@ -254,7 +254,7 @@ qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
         }
         if (b->texture >= 0) {
             glEnable(GL_TEXTURE_2D);
-            GL_Bind(b->texture);
+            Hyena_BindTexture(b->texture);
         } else {
             glDisable(GL_TEXTURE_2D);
         }
