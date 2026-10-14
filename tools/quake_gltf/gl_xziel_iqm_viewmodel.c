@@ -22,7 +22,8 @@
 #define XIQM_MAX_TRIANGLES 180000u
 
 typedef struct {
-    GLfloat p[3], uv[2];
+    GLfloat p[3], uv[2], bind[3];
+    unsigned char indices[4], weights[4];
 } xiqm_vertex;
 typedef struct {
     unsigned start, count;
@@ -37,11 +38,15 @@ typedef struct {
     xiqm_batch *batches;
 } xiqm_state;
 
-static xiqm_state xiqm;
+static xiqm_state xiqm_slots[2];
+static xiqm_state *xiqm_active = &xiqm_slots[0];
+#define xiqm (*xiqm_active)
 static cvar_t xziel_iqm_viewmodels = {"xziel_iqm_viewmodels", "0", true};
+static cvar_t xziel_iqm_preview_clip = {"xziel_iqm_preview_clip", "-1", true};
 
 void Xziel_IQM_Init(void) {
     Cvar_RegisterVariable(&xziel_iqm_viewmodels);
+    Cvar_RegisterVariable(&xziel_iqm_preview_clip);
 }
 
 /* IQM2 defines little-endian words. Supported Vril platforms here are LE. */
@@ -79,6 +84,11 @@ static void xiqm_strncpy(char *dst, size_t capacity, const char *src) {
     memcpy(dst, src, n);
     dst[n] = 0;
 }
+
+#include "xiqm_animation.h"
+static xzanim xza_slots[2];
+static xzanim *xza_active=&xza_slots[0];
+#define xza (*xza_active)
 /* Safe fragment: the source material can name a texture within a model folder
  * but must not navigate outside the game's virtual filesystem. */
 static void xiqm_fragment(char *dst, size_t capacity, const char *src) {
