@@ -60,11 +60,14 @@ static xiqm_state *xiqm_active = &xiqm_slots[0];
 #define xiqm (*xiqm_active)
 static cvar_t xziel_iqm_viewmodels = {"xziel_iqm_viewmodels", "0", true};
 static cvar_t xziel_iqm_entities = {"xziel_iqm_entities", "0", true};
+/* Original NZ:P hands-only MDL must be certified before enabling by default. */
+static cvar_t xziel_iqm_original_hands = {"xziel_iqm_original_hands", "0", true};
 static cvar_t xziel_iqm_preview_clip = {"xziel_iqm_preview_clip", "-1", true};
 
 void Xziel_IQM_Init(void) {
     Cvar_RegisterVariable(&xziel_iqm_viewmodels);
     Cvar_RegisterVariable(&xziel_iqm_entities);
+    Cvar_RegisterVariable(&xziel_iqm_original_hands);
     Cvar_RegisterVariable(&xziel_iqm_preview_clip);
 }
 
@@ -656,6 +659,49 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     if (depth_was_enabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     if (texture_was_enabled) glEnable(GL_TEXTURE_2D); else glDisable(GL_TEXTURE_2D);
     return true;
+}
+
+/* A verified stock-only hands MDL can overlay the modern IQM gun.
+ * Its EXACT 46 original pose bytes are preserved, so authoritative e->frame
+ * advances the hand reload without replacing the visible 14,450-face gun.
+ * Use a deliberately separate model: NEVER render the old full MP40.
+ * This is opt-in until geometry-ownership and Android camera QA pass.
+ *
+ * R_DrawAliasModel's upstream implementation uses global currententity in
+ * several places, not only its argument. Only render with the real cl.viewent
+ * as currententity, and restore its model pointer immediately afterwards.
+ */
+void Xziel_IQM_DrawOriginalHands(entity_t *e) {
+    static model_t *hands=NULL;
+    static int first_report=0;
+    model_t *weapon;
+    if (xziel_iqm_original_hands.value==0 || !e || !e->model ||
+        e!=&cl.viewent || currententity!=e ||
+        strcmp(e->model->name,"models/weapons/mp40/v_mp40.mdl")!=0)
+        return;
+    if (!hands) {
+        hands=Mod_ForName("models/weapons/mp40/v_mp40_hands_only.mdl",false);
+        if(!hands || hands->type!=mod_alias) {
+            if(!first_report) {
+                XIQM_ANDROID_LOG("ORIGINAL_HANDS_NOT_LOADED no safe 46-frame hands model");
+                first_report=1;
+            }
+            hands=NULL;
+            return;
+        }
+    }
+    if(e->frame<0 || e->frame>=46) {
+        XIQM_ANDROID_LOG("ORIGINAL_HANDS_FRAME_REJECT frame=%d",e->frame);
+        return;
+    }
+    weapon=e->model;
+    e->model=hands;
+    R_DrawAliasModel(e);
+    e->model=weapon;
+    if(!first_report) {
+        XIQM_ANDROID_LOG("ORIGINAL_HANDS_SAME_46_POSE model=%s frame=%d alongside=14450-face-IQM",hands->name,e->frame);
+        first_report=1;
+    }
 }
 
 /* Generic world alias integration: same IQM parser/skinner, no QuakeC change.
