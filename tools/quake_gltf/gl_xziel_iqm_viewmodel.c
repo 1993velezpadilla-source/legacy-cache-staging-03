@@ -126,6 +126,7 @@ static void xiqm_strncpy(char *dst, size_t capacity, const char *src) {
 extern void R_DrawAliasModel(entity_t *e);
 /* Directly read Vril's REAL interpolated ADS offset; no world-coordinate guess. */
 extern float Xziel_IQM_SourceADSOffsetLateral(void);
+extern cvar_t scr_fov, scr_fov_viewmodel;
 static xzanim xza_slots[XIQM_SLOT_COUNT];
 static xzanim *xza_active=&xza_slots[0];
 #define xza (*xza_active)
@@ -644,7 +645,24 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
         ads_shift_z=ads_fraction*xiqm.ads_delta_z;
     }
     glPushMatrix();
-    R_RotateForEntity(e, e->scale);
+    /* The source Vril alias renderer calls R_RotateForEntity with DEFAULT
+     * scale, then applies ENTSCALE and r_viewmodel_fov INSIDE its alias
+     * transform. Before this correction IQM ignored viewmodel FOV entirely,
+     * so original NZ:P hands had a different apparent gun length than the
+     * 14,450-face MP40. Keep both models under identical projection rules. */
+    R_RotateForEntity(e, ENTSCALE_DEFAULT);
+    {
+        float model_factor=1.0f, viewmodel_x=1.0f;
+        if (e->scale!=ENTSCALE_DEFAULT && e->scale!=0)
+            model_factor=ENTSCALE_DECODE(e->scale);
+        if(i<2 && scr_fov_viewmodel.value!=0.0f) {
+            float half_fov=scr_fov.value*0.5f*(float)M_PI/180.0f;
+            if(half_fov>0.01f && half_fov<1.56f)
+                viewmodel_x=(1.0f/tanf(half_fov))*
+                            scr_fov_viewmodel.value/90.0f;
+        }
+        glScalef(model_factor*viewmodel_x,model_factor,model_factor);
+    }
     if (reload_progress>=0.0f)
         glRotatef(11.0f*sinf(reload_progress*3.14159265f),1.0f,0.0f,0.0f);
     glTranslatef(xiqm.fit_pos[0],xiqm.fit_pos[1]+ads_shift_y,xiqm.fit_pos[2]+ads_shift_z);
