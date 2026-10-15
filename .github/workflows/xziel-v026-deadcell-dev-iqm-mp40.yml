@@ -197,7 +197,8 @@ jobs:
              '"$ASSET_WORK/nzp/models/weapons/mp40/v_mp40.mdl" '
              '"$ASSET_WORK/nzp/models/weapons/mp40/v_mp40.iqm" '
              '"$ASSET_WORK/nzp/models/weapons/mp40/v_mp40.iqmfit" '
-             '"$DEPS/quakec/source/shared/weapon_stats.qc" W_MP40')
+             '"$DEPS/quakec/source/shared/weapon_stats.qc" W_MP40 '
+             '--hands-only "$ASSET_WORK/nzp/models/weapons/mp40/v_mp40_hands_only.mdl"')
           p.write_text(text)
           PY
       - name: Assemble ORIGINAL v0.26 Dead Cell Developer + actual high-poly MP40
@@ -252,6 +253,30 @@ jobs:
               # Source v0.26 GetWeaponADSOfs W_MP40:
               # [-11400,6500,-1000]/1000 => e.origin[1]=+11.4, z=+6.5
               assert abs(float(metadata[4])-11.4)<0.001,metadata
+              # The old unfiltered stock MDL frame includes a 7.06 Quake
+              # lateral-unit span of displaced reload hands, causing the
+              # replacement gun to hover separately (visible on real phone).
+              # The actual original MP40 gun's Y centroid is ~ -11.47.
+              import numpy as np
+              from io import BytesIO
+              modelbytes=z.read("nzp/models/weapons/mp40/v_mp40.iqm")
+              vcount=struct.unpack_from("<I",modelbytes,48)[0]
+              desc_count=struct.unpack_from("<I",modelbytes,44)[0]
+              desc_start=struct.unpack_from("<I",modelbytes,52)[0]
+              gun_y=None
+              for t in range(desc_count):
+                  kind,flags,fmt,width,ofs=struct.unpack_from("<5I",modelbytes,desc_start+t*20)
+                  if kind==0 and fmt==7 and width==3:
+                      gun_y=np.frombuffer(modelbytes,dtype="<f4",count=vcount*3,
+                                          offset=ofs).reshape((-1,3))[:,1]
+              assert gun_y is not None
+              fit_scale=float(metadata[0]);fit_y=float(metadata[2])
+              actual_mid=fit_y+fit_scale*(float(gun_y.min())+float(gun_y.max()))/2
+              # These source constraints are from the ORIGINAL source MDL
+              # metal vertices, not a guessed artist placement.
+              assert -13.0<actual_mid<-10.0,(actual_mid,fit_y)
+              print("MP40_GUN_ONLY_LATERAL_ALIGNMENT_GREEN",actual_mid)
+
               assert abs(float(metadata[5]))>1.0 and abs(float(metadata[6]))>0.1,metadata
               assert [int(float(x)) for x in metadata[7:9]]==[4,31],metadata
               assert 0.50 < float(metadata[9]) < 0.59,metadata
