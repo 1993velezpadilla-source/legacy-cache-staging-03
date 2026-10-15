@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 27
     env:
-      ANDROID_AVD_HOME: ${{ runner.temp }}/xziel-iqm-avd
+      ANDROID_AVD_HOME: ${{ github.workspace }}/.android-avd
     steps:
       - uses: actions/download-artifact@v4
         with:
