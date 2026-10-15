@@ -72,7 +72,9 @@ def patch(root: Path):
     model.write_text(model_updated)
     main.write_text(main_updated)
     shutil.copy2(source, dest)
-    print("XZIEL_IQM_PATCHED: optional IQM bind-pose model sidecars; MDL fallback")
+    for header_name in ("xiqm_matrix.h", "xiqm_animation.h"):
+        shutil.copy2(source.with_name(header_name), gl_dir / header_name)
+    print("XZIEL_IQM_PATCHED: opt-in skeletal preview sidecars; MDL fallback")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
