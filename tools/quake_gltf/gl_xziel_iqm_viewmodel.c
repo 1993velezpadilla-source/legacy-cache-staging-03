@@ -54,6 +54,11 @@ typedef struct {
     unsigned magazine_faces;
     unsigned magazine_motion_logged;
     float magazine_drop, magazine_side;
+    /* Per-frame original NZ:P gun motion (not guessed procedural rotation).
+     * 46 source QuakeC frames drive modern IQM and hand MDL together. */
+    GLfloat stock_gun_pose[46][16];
+    unsigned stock_gun_pose_frames;
+    int stock_gun_pose_logged;
 } xiqm_state;
 
 #define XIQM_SLOT_COUNT 24u
@@ -95,6 +100,8 @@ static void xiqm_free(void) {
     xiqm.magazine_faces=0;
     xiqm.magazine_motion_logged=0;
     xiqm.magazine_drop=xiqm.magazine_side=0.0f;
+    xiqm.stock_gun_pose_frames=0;
+    xiqm.stock_gun_pose_logged=0;
     xiqm.tri_vertices = NULL;
     xiqm.batches = NULL;
     xiqm.triangles = 0;
@@ -201,6 +208,72 @@ static void xiqm_load_moving_magazine(const char *mdlpath) {
     free(raw);
     XIQM_ANDROID_LOG("MODERN_MAGAZINE_COMPONENT model=%s faces=%u weapon_faces=%u down=%.3f side=%.3f",
                     mdlpath,seen,xiqm.triangles,xiqm.magazine_drop,xiqm.magazine_side);
+}
+/* Real v0.26 weapon gun pose, reconstructed from the ORIGINAL 46 MDL
+ * frames after separating the hands and removing gun polygons. A procedural
+ * 11-degree rotation was demonstrably wrong: NZ:P pitches its gun ~35
+ * degrees and changes its local translation over the 4..31 reload frames.
+ * This sidecar never modifies gameplay or the stock 46-frame hand MDL. */
+static void xiqm_load_original_gun_pose(const char *mdlpath) {
+    unsigned char raw[12u+46u*64u];
+    char path[160];
+    FILE *f=NULL;
+    int len;
+    unsigned frame,k;
+    if (strlen(mdlpath)<5 || strlen(mdlpath)+12>=sizeof(path) ||
+        !xiqm.has_legacy_reload || xziel_iqm_original_hands.value==0)
+        return;
+    snprintf(path,sizeof(path),"%.*s.iqmpose",(int)(strlen(mdlpath)-4),mdlpath);
+    len=COM_FOpenFile(path,&f);
+    if (!f || len!=(int)sizeof(raw)) {
+        XIQM_ANDROID_LOG("ORIGINAL_GUN_POSE_MISSING file=%s bytes=%d",path,len);
+        if (f)fclose(f);
+        return;
+    }
+    if (fread(raw,1,sizeof(raw),f)!=sizeof(raw)) { fclose(f);return; }
+    fclose(f);
+    if (memcmp(raw,"XIQMPOSE",8) || xiqm_u32(raw+8)!=46u) {
+        XIQM_ANDROID_LOG("ORIGINAL_GUN_POSE_INVALID_HEADER file=%s",path);
+        return;
+    }
+    for(frame=0;frame<46;frame++) {
+        for(k=0;k<16;k++) {
+            float v=xiqm_f32(raw+12u+64u*frame+4u*k);
+            if (!isfinite(v) || fabsf(v)>120.0f) {
+                XIQM_ANDROID_LOG("ORIGINAL_GUN_POSE_NONFINITE_OR_LARGE frame=%u",frame);
+                return;
+            }
+            xiqm.stock_gun_pose[frame][k]=v;
+        }
+        if(fabsf(xiqm.stock_gun_pose[frame][3])>.0001f ||
+           fabsf(xiqm.stock_gun_pose[frame][7])>.0001f ||
+           fabsf(xiqm.stock_gun_pose[frame][11])>.0001f ||
+           fabsf(xiqm.stock_gun_pose[frame][15]-1.f)>.0001f) {
+            XIQM_ANDROID_LOG("ORIGINAL_GUN_POSE_INVALID_MATRIX frame=%u",frame);
+            return;
+        }
+    }
+    for(k=0;k<16;k++) {
+        float identity=(k==0 || k==5 || k==10 || k==15)?1.f:0.f;
+        if(fabsf(xiqm.stock_gun_pose[0][k]-identity)>.0001f) {
+            XIQM_ANDROID_LOG("ORIGINAL_GUN_POSE_FRAME_ZERO_NOT_IDENTITY");
+            return;
+        }
+    }
+    /* Prevent a mislabeled 46-frame asset from passing the camera gate. */
+    {
+        float tr=xiqm.stock_gun_pose[10][0]+xiqm.stock_gun_pose[10][5]+
+                 xiqm.stock_gun_pose[10][10];
+        float degrees=acosf(fmaxf(-1.f,fminf(1.f,(tr-1.f)*0.5f)))*180.f/
+                      3.14159265358979323846f;
+        if(degrees<20.f || degrees>80.f) {
+            XIQM_ANDROID_LOG("ORIGINAL_GUN_POSE_FRAME10_SUSPICIOUS deg=%.2f",degrees);
+            return;
+        }
+        XIQM_ANDROID_LOG("ORIGINAL_GUN_POSE_46_SOURCE_FRAMES_LOADED file=%s frame10_angle=%.2f",
+                         path,degrees);
+    }
+    xiqm.stock_gun_pose_frames=46u;
 }
 static int xiqm_load(const char *mdlpath) {
     char path[128], folder[128];
@@ -388,6 +461,7 @@ static int xiqm_load(const char *mdlpath) {
     xiqm.triangles = tri_count;
     xiqm.num_batches = mesh_count;
     xiqm_load_moving_magazine(mdlpath);
+    xiqm_load_original_gun_pose(mdlpath);
     xiqm.available = 1;
     ok = 1;
     Con_Printf("XZIEL IQM: loaded %s meshes=%u triangles=%u vertices=%u\n",
@@ -688,8 +762,25 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
         }
         glScalef(model_factor*viewmodel_x,model_factor,model_factor);
     }
-    if (reload_progress>=0.0f)
-        glRotatef(11.0f*sinf(reload_progress*3.14159265f),1.0f,0.0f,0.0f);
+    /* Synchronize the replacement 14.5k-face MP40 with the ORIGINAL 46
+     * frames of gun movement that the hands were originally keyed against.
+     * This is the same root/local source pose as the original gun MDL, so
+     * the reload hand no longer operates around a stationary modern gun.
+     * NO extra 11-degree guessed tilt on top of authoritative gun motion. */
+    if (i<2 && xiqm.stock_gun_pose_frames==46u &&
+        e->frame>=0 && e->frame<46) {
+        const GLfloat *pose=xiqm.stock_gun_pose[e->frame];
+        glMultMatrixf(pose);
+        if (reload_progress>=0.0f && !xiqm.stock_gun_pose_logged) {
+            float c=(pose[0]+pose[5]+pose[10]-1.f)*0.5f;
+            if(c<-1.f)c=-1.f;if(c>1.f)c=1.f;
+            XIQM_ANDROID_LOG("MODERN_MP40_STOCK_RELOAD_POSE_FOLLOW model=%s frame=%d angle=%.2f shift=(%.2f %.2f %.2f) hands_same_source_pose=1",
+                             xiqm.model,e->frame,
+                             acosf(c)*180.f/3.14159265358979323846f,
+                             pose[12],pose[13],pose[14]);
+            xiqm.stock_gun_pose_logged=1;
+        }
+    }
     glTranslatef(xiqm.fit_pos[0],xiqm.fit_pos[1]+ads_shift_y,xiqm.fit_pos[2]+ads_shift_z);
     glScalef(xiqm.fit_scale,xiqm.fit_scale,xiqm.fit_scale);
     if(i<2 && xiqm.ads_amplitude_y>1.0f)
@@ -780,6 +871,15 @@ void Xziel_IQM_DrawOriginalHands(entity_t *e) {
     }
     if(e->frame<0 || e->frame>=46) {
         XIQM_ANDROID_LOG("ORIGINAL_HANDS_FRAME_REJECT frame=%d",e->frame);
+        return;
+    }
+    /* Missing/unverified gun-pose sidecar must never falsely pass by
+     * drawing independently moving original hands around a static gun. */
+    if(xiqm_slots[0].stock_gun_pose_frames!=46u) {
+        if(!first_report) {
+            XIQM_ANDROID_LOG("ORIGINAL_HANDS_REJECTED_NO_SYNCED_GUN_POSE");
+            first_report=1;
+        }
         return;
     }
     weapon=e->model;
