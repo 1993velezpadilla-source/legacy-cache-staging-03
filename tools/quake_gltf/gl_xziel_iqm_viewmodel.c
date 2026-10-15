@@ -50,6 +50,7 @@ typedef struct {
     xiqm_batch *batches;
     unsigned char *magazine_bits;
     unsigned magazine_faces;
+    float magazine_drop, magazine_side;
 } xiqm_state;
 
 #define XIQM_SLOT_COUNT 24u
@@ -86,6 +87,7 @@ static void xiqm_free(void) {
     free(xiqm.magazine_bits);
     xiqm.magazine_bits=NULL;
     xiqm.magazine_faces=0;
+    xiqm.magazine_drop=xiqm.magazine_side=0.0f;
     xiqm.tri_vertices = NULL;
     xiqm.batches = NULL;
     xiqm.triangles = 0;
@@ -163,9 +165,26 @@ static void xiqm_load_moving_magazine(const char *mdlpath) {
     if (!xiqm.magazine_bits){ free(raw);return; }
     memcpy(xiqm.magazine_bits,raw+12,bytes);
     xiqm.magazine_faces=seen;
+    {
+        float bottom=1.0e6f,top=-1.0e6f;
+        for(i=0;i<xiqm.triangles;i++) {
+            unsigned k;
+            if (!(xiqm.magazine_bits[i/8u] & (1u << (i%8u)))) continue;
+            for(k=0;k<3u;k++) {
+                float z=xiqm.tri_vertices[i*3u+k].bind[2];
+                if(z<bottom)bottom=z;
+                if(z>top)top=z;
+            }
+        }
+        if(top>bottom && top-bottom<10.0f) {
+            /* Choreography scales automatically to the imported weapon. */
+            xiqm.magazine_drop=(top-bottom)*1.08f;
+            xiqm.magazine_side=(top-bottom)*0.32f;
+        }
+    }
     free(raw);
-    XIQM_ANDROID_LOG("MODERN_MAGAZINE_COMPONENT model=%s faces=%u weapon_faces=%u",
-                    mdlpath,seen,xiqm.triangles);
+    XIQM_ANDROID_LOG("MODERN_MAGAZINE_COMPONENT model=%s faces=%u weapon_faces=%u down=%.3f side=%.3f",
+                    mdlpath,seen,xiqm.triangles,xiqm.magazine_drop,xiqm.magazine_side);
 }
 static int xiqm_load(const char *mdlpath) {
     char path[128], folder[128];
@@ -396,9 +415,19 @@ static float xiqm_magazine_motion(float progress) {
     if (progress<0.91f) return 1.0f-xiqm_smooth((progress-0.62f)/0.29f);
     return 0.0f;
 }
-static void xiqm_update_pose(float magazine_movement) {
+static void xiqm_update_pose(float reload_progress) {
     unsigned i,k;
     int active=0;
+    float magazine_movement=xiqm_magazine_motion(reload_progress);
+    float magazine_side=0.0f;
+    if (reload_progress>=0.16f && reload_progress<=0.88f) {
+        if(reload_progress<0.42f)
+            magazine_side=xiqm_smooth((reload_progress-0.16f)/0.26f);
+        else if(reload_progress<=0.66f)
+            magazine_side=1.0f;
+        else
+            magazine_side=1.0f-xiqm_smooth((reload_progress-0.66f)/0.22f);
+    }
     if (xziel_iqm_preview_clip.value>=0 && xza.weighted &&
         xziel_iqm_preview_clip.value<(float)xza.clips)
         active=xza_eval(&xza,(unsigned)xziel_iqm_preview_clip.value,(float)cl.time);
@@ -425,8 +454,11 @@ static void xiqm_update_pose(float magazine_movement) {
             (xiqm.magazine_bits[(i/3u)/8u] & (1u << ((i/3u)%8u)))) {
             /* Real magazine triangles from THIS 14,450-face high-poly IQM.
              * Keep geometry, base-color UVs, material and normals intact. */
-            v->p[0]+=0.010f*magazine_movement;
-            v->p[2]-=0.135f*magazine_movement;
+            /* Same modern magazine descends from receiver, drifts LEFT
+             * on extraction, then inserts before source reload completes.
+             * This deliberately does NOT resurrect the Quake MDL gun. */
+            v->p[1]-=xiqm.magazine_side*magazine_side;
+            v->p[2]-=xiqm.magazine_drop*magazine_movement;
         }
     }
 }
@@ -519,7 +551,7 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
                             xiqm.model,e->frame,xiqm.magazine_faces);
             logged=1;
         }
-        xiqm_update_pose(xiqm_magazine_motion(progress));
+        xiqm_update_pose(progress);
     }
 
     depth_was_enabled=glIsEnabled(GL_DEPTH_TEST);
