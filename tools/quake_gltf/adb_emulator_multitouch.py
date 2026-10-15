@@ -8,6 +8,8 @@ reload succeeded. Coordinates are the actual v0.26 2400x1080 HUD coordinates.
 No installed APK, engine state or original input configuration is modified.
 """
 import argparse
+import os
+import shutil
 import struct
 import subprocess
 import time
@@ -19,8 +21,26 @@ FIRE = (2124, 632)
 RELOAD = (1932, 848)
 
 
+def locate_adb():
+    """GitHub Linux runners don't consistently put adb on PATH.
+
+    The native emulator workflow already uses ANDROID_HOME/platform-tools/adb.
+    Use that identical executable, never silently shell out to missing "adb".
+    """
+    for env in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
+        base = os.environ.get(env)
+        if base:
+            exe = Path(base) / "platform-tools" / "adb"
+            if exe.is_file() and os.access(exe, os.X_OK):
+                return str(exe)
+    on_path = shutil.which("adb")
+    if on_path:
+        return on_path
+    raise RuntimeError("Android platform-tools adb executable unavailable")
+
+
 def adb(*args, binary=False):
-    p = subprocess.run(["adb", *map(str, args)], capture_output=True,
+    p = subprocess.run([locate_adb(), *map(str, args)], capture_output=True,
                        timeout=35, check=True)
     return p.stdout if binary else p.stdout.decode("utf-8", "replace")
 
@@ -74,7 +94,8 @@ def main():
                if row.strip().endswith("\tdevice")]
     if len(devices) != 1 or not devices[0].startswith("emulator-"):
         raise RuntimeError("Requires EXACTLY ONE working Android emulator")
-    print("HARDWARE_MULTITOUCH_ADS_FIRE_RELOAD", devices[0], flush=True)
+    print("HARDWARE_MULTITOUCH_ADS_FIRE_RELOAD", devices[0],
+          "adb=", locate_adb(), flush=True)
     held_ads = held_other = False
     try:
         down(0, 91, *ADS)
