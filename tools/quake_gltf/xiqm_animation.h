@@ -26,7 +26,8 @@ static int xza_load(xzanim *a,const unsigned char *buf,size_t len){
  if(n>XZA_BONES||poses>XZA_BONES||clips>XZA_CLIPS||frames>XZA_FRAMES||
     channels>1280||!xiqm_span(len,jo,n,48)||
     !xiqm_span(len,po,poses,88)||!xiqm_span(len,co,clips,20)||
-    !xiqm_span(len,fo,frames,channels*2)||
+    /* Static IQM may declare zero frames and zero channels. A zero stride\n     * is not an invalid IQM; it simply has no animation sample section. */
+    (frames ? (!channels || !xiqm_span(len,fo,frames,channels*2)) : channels!=0)||
     !xiqm_span(len,to,text_count,1))return 0;
  if(!frames||!n||poses!=n||!clips)return 1;
  a->joints=n;a->poses=poses;a->clips=clips;a->frames=frames;a->channels=channels;
