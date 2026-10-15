@@ -50,6 +50,7 @@ def patch(root: Path):
         '#include "../../../nzportable_def.h"\n',
         '#include "../../../nzportable_def.h"\n\n'
         'qboolean Xziel_IQM_DrawViewModel(entity_t *e);\n'
+        'void Xziel_IQM_DrawOriginalHands(entity_t *e);\n'
         'qboolean Xziel_IQM_DrawWorldEntity(entity_t *e);\n',
         "Renderer declaration"
     )
@@ -64,7 +65,11 @@ def patch(root: Path):
             raise RuntimeError(f"Could not find end of {name}")
         section = main_updated[begin:end]
         marker = "\tR_DrawAliasModel (currententity);\n"
-        replacement = "\tif (!Xziel_IQM_DrawViewModel(currententity))\n\t\tR_DrawAliasModel (currententity);\n"
+        replacement = ("\tif (!Xziel_IQM_DrawViewModel(currententity))\n"
+                       "\t\tR_DrawAliasModel (currententity);\n")
+        if name == "void R_DrawViewModel (void)":
+            replacement += ("\telse\n"
+                            "\t\tXziel_IQM_DrawOriginalHands(currententity);\n")
         section = replace_once(section, marker, replacement, name)
         main_updated = main_updated[:begin] + section + main_updated[end:]
 
