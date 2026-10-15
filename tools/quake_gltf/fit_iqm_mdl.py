@@ -40,7 +40,9 @@ def mdl_bbox(path, hands_only=None):
         # is -11.47, a 7-unit separation already visible on the Pixel Fold.
         # Derive the modern-gun fit from the STOCK GUN-ONLY mesh instead.
         h=Path(hands_only).read_bytes()
-        if h[:68]!=b[:68] or len(h)<84:
+        # Byte 64..67 is numtris, intentionally DIFFERENT in hands-only MDL.
+        # Require the original stock header and frame count everywhere else.
+        if len(h)<84 or h[:64]!=b[:64] or h[68:84]!=b[68:84]:
             raise ValueError("hand separation is not from same stock MDL")
         hand_tris=struct.unpack_from("<I",h,64)[0]
         if not 120<=hand_tris<=550 or struct.unpack_from("<I",h,68)[0]!=frames:
