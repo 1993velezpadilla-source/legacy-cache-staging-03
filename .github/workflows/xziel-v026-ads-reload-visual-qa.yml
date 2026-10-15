@@ -13,33 +13,52 @@ permissions:
 jobs:
   mp40-live-ads-reload-qa:
     runs-on: ubuntu-latest
-    timeout-minutes: 23
+    timeout-minutes: 43
     env:
       GH_TOKEN: ${{ github.token }}
       ANDROID_AVD_HOME: ${{ github.workspace }}/.android-avd
     steps:
       - uses: actions/checkout@v4
-      - name: Obtain verified v0.26 Dead Cell Developer + MP40 ADS/Reload APK
+      - name: Obtain SAME-COMMIT v0.26 Dead Cell + MP40 APK (never stale 348-face builds)
         shell: bash
+        env:
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          # Pin the 894-face magazine build, NOT obsolete 348-face test APK.
-          # Wait until its APK artifact is published (Android emulator can still be running).
-          RUN_ID=38674035851
+          # Hard-coding a prior Actions run silently reuses the wrong MP40 APK.
+          # Match the precise source commit of THIS QA run, including dispatches.
+          WORKFLOW=xziel-v026-deadcell-dev-iqm-mp40.yml
+          NAME=XZIEL-v026-DeadCell-DEV-MP40-IQM-APK
+          RUN_ID=''
           READY=0
-          for attempt in $(seq 1 120); do
-            count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts | map(select(.name=="XZIEL-v026-DeadCell-DEV-MP40-IQM-APK" and .expired==false)) | length')"
-            if [ "$count" = 1 ]; then READY=1; break; fi
-            state="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')"
-            if [ "$state" = failure ] || [ "$state" = cancelled ]; then
-              echo "Pinned 894-magazine Android build FAILED: $RUN_ID"; exit 1
+          for attempt in $(seq 1 180); do
+            RUN_ID="$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW/runs" \
+              -f head_sha="$CI_HEAD_SHA" -f per_page=20 \
+              --jq '.workflow_runs | sort_by(.run_number) | reverse | .[0].id // empty')"
+            if [ -n "$RUN_ID" ]; then
+              actual_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.head_sha')"
+              if [ "$actual_sha" != "$CI_HEAD_SHA" ]; then
+                echo "ERROR: APK workflow SHA mismatch: $actual_sha != $CI_HEAD_SHA"; exit 1
+              fi
+              count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+                --jq ".artifacts | map(select(.name==\"$NAME\" and .expired==false)) | length")"
+              if [ "$count" = 1 ]; then READY=1; break; fi
+              state="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')"
+              if [ "$state" = failure ] || [ "$state" = cancelled ] || [ "$state" = timed_out ]; then
+                echo "ERROR: current-commit Android APK run $RUN_ID ended $state"; exit 1
+              fi
+              if [ "$state" = success ]; then
+                echo "ERROR: Android APK run $RUN_ID succeeded without artifact $NAME"; exit 1
+              fi
             fi
-            sleep 5
+            sleep 10
           done
-          test "$READY" = 1
-          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" \
-            -n XZIEL-v026-DeadCell-DEV-MP40-IQM-APK -D dist
+          if [ "$READY" != 1 ]; then
+            echo "ERROR: no matching Android APK artifact for commit $CI_HEAD_SHA"; exit 1
+          fi
+          echo "CI_HEAD_SHA=$CI_HEAD_SHA RUN_ID=$RUN_ID" | tee dist/apk-source.txt
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n "$NAME" -D dist
           sha256sum dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk | tee dist/apk.sha256
           test -s dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk
       - name: Install Android emulator
@@ -143,5 +162,7 @@ jobs:
             dist/launch.txt
             dist/emulator.log
             dist/ads-input.txt
+            dist/apk-source.txt
+            dist/apk.sha256
           if-no-files-found: warn
           retention-days: 14
