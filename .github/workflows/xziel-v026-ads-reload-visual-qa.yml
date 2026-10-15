@@ -84,6 +84,11 @@ jobs:
             -no-window -no-snapshot -no-audio -no-boot-anim \
             -gpu swiftshader_indirect -memory 2048 > dist/emulator.log 2>&1 &
           ADB="$ANDROID_HOME/platform-tools/adb"
+          # The previous QA failure ('adb' not on runner PATH) discarded all
+          # game logcat evidence because collection came AFTER the gesture.
+          # Preserve crash, ADS, render and touch evidence even if a later
+          # Python gesture assertion fails.
+          trap '"$ADB" logcat -d -v threadtime > dist/logcat.txt 2>/dev/null || true' EXIT
           timeout 180 "$ADB" wait-for-device
           READY=0
           for i in $(seq 1 90); do
