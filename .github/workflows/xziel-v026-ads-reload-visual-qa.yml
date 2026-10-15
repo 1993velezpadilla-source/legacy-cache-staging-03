@@ -24,9 +24,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          gh run download 38666730372 -R "$GITHUB_REPOSITORY" \
+          gh run download 38668324927 -R "$GITHUB_REPOSITORY" \
             -n XZIEL-v026-DeadCell-DEV-MP40-IQM-APK -D dist
-          echo '8d477d58476842eca2f4cfcdb251576ee591c30ac1f2569daa68d17ebfbea3a3  dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk' | sha256sum -c
+          echo 'bfc8701fda87b68bd6f1a80f5784b2b6bebacc2b9378257a4fac37f7180750ce  dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk' | sha256sum -c
       - name: Install Android emulator
         shell: bash
         run: |
@@ -92,6 +92,10 @@ jobs:
             > dist/stage.txt 2>/dev/null || true
           grep -q FIRST_FRAME_OK dist/stage.txt
           grep -q 'XZIEL_IQM.*ORIGINAL_QC_ADS y=11.400' dist/logcat.txt
+          if ! grep -q 'XZIEL_IQM.*OPTICAL_SIGHT_CENTERED model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
+             echo 'ADS_OPTICAL_CENTERING_NOT_CONFIRMED: screenshot kept for diagnosis'
+             exit 1
+          fi
           grep -q 'XZIEL_IQM.*DRAWN model=models/weapons/mp40/v_mp40.mdl triangles=14450 textured_batches=2' dist/logcat.txt
           if ! grep -q 'XZIEL_IQM.*RELOAD_LEGACY_ANIMATED_FALLBACK' dist/logcat.txt; then
              echo "RELOAD_VISUAL_QA_PENDING: automatic HUD test did not observe the actual animated MDL reload."
