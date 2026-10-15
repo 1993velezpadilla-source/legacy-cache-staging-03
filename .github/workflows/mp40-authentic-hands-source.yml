@@ -1,0 +1,78 @@
+name: MP40 Authentic NZP Hands 46-Frame Split Gate
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/quake_gltf/blender_split_original_mp40_hands.py'
+      - '.github/workflows/mp40-authentic-hands-source.yml'
+permissions:
+  contents: read
+jobs:
+  source-hand-separation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install original Blender source-analysis runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y -qq blender python3-numpy libegl1 libgl1
+      - name: Checkout authentic source MP40 rig and original 46-frame MDL
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --depth 1 --sparse https://github.com/nzp-team/assets.git /tmp/mp40-nzp
+          git -C /tmp/mp40-nzp sparse-checkout set source/models/weapons/mp40/v_mp40 common/models/weapons/mp40
+          test -s /tmp/mp40-nzp/source/models/weapons/mp40/v_mp40/mesh.blend
+          test -s /tmp/mp40-nzp/common/models/weapons/mp40/v_mp40.mdl
+          git clone --filter=blob:none --no-checkout https://github.com/1993velezpadilla-source/config-old-3.git /tmp/mp40-reference
+          git -C /tmp/mp40-reference fetch --depth 1 origin cbbf5669f2e9feb0f763dd21b6069347fe9fde4f
+          git -C /tmp/mp40-reference checkout --detach cbbf5669f2e9feb0f763dd21b6069347fe9fde4f
+          test -s /tmp/mp40-reference/tools/mp40_bridge/blender_stock_model_icp.py
+      - name: Measure original Blender-to-MDL spatial transform using actual geometry
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mp40-split dist
+          SRC=/tmp/mp40-nzp/source/models/weapons/mp40/v_mp40/mesh.blend
+          MDL=/tmp/mp40-nzp/common/models/weapons/mp40/v_mp40.mdl
+          blender -b "$SRC" \
+            --python /tmp/mp40-reference/tools/mp40_bridge/blender_stock_model_icp.py -- \
+            "$MDL" /tmp/mp40-split/source-to-mdl.json \
+            > dist/measure.log 2>&1 || { tail -n 80 dist/measure.log; exit 1; }
+          grep -q MP40_SOURCE_TO_VRIL_MDL_POINTCLOUD_MATRIX_MEASURED_GREEN dist/measure.log
+      - name: Extract authentic 46-pose moving hands only; require no legacy gun polygons
+        run: |
+          set -euo pipefail
+          SRC=/tmp/mp40-nzp/source/models/weapons/mp40/v_mp40/mesh.blend
+          MDL=/tmp/mp40-nzp/common/models/weapons/mp40/v_mp40.mdl
+          blender -b "$SRC" \
+            --python tools/quake_gltf/blender_split_original_mp40_hands.py -- \
+            "$MDL" /tmp/mp40-split/source-to-mdl.json \
+            /tmp/mp40-split/v_mp40_hands_only.mdl dist/hand-mask-report.json \
+            > dist/hands.log 2>&1 || { tail -n 110 dist/hands.log; exit 1; }
+          grep -q MP40_AUTHENTIC_SOURCE_HANDS_46_FRAME_SPLIT_GREEN dist/hands.log
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,struct
+          r=json.loads(Path('dist/hand-mask-report.json').read_text())
+          p=Path('/tmp/mp40-split/v_mp40_hands_only.mdl')
+          b=p.read_bytes()
+          assert b[:4]==b'IDPO' and struct.unpack_from('<I',b,4)[0]==6
+          assert struct.unpack_from('<I',b,68)[0]==46
+          assert struct.unpack_from('<I',b,64)[0]==r['hands_polygons']
+          assert r['removed_legacy_gun_polygons']>200
+          assert r['all_46_source_pose_bytes_preserved']
+          assert r['runtime_renderer_enabled'] is False
+          print('MP40_SOURCE_HANDS_REAL_46_FRAMES_VERIFIED_NONSHIPPING')
+          PY
+      - name: Preserve source-mask measurements only (not original game binary)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MP40-NZP-AUTHENTIC-HANDS-SEPARATION-DIAGNOSTICS
+          path: |
+            dist/hands.log
+            dist/measure.log
+            dist/hand-mask-report.json
+          if-no-files-found: warn
+          retention-days: 14
