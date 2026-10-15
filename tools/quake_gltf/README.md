@@ -36,7 +36,7 @@ Run unit tests with `cd tools/quake_gltf && python3 -m unittest -v` and inventor
 - Per-mesh materials resolve from the model directory as `<sanitized-material-name>.png`, `.tga`, or `.jpg`. Use `python3 tools/quake_gltf/extract_basecolor.py MP40.glb --output models/weapons/mp40` to extract matching **base-color** images without recompression. The extractor does not manufacture normal/metallic/roughness shaders.
 - Optional conversion: `iqmtool models/weapons/mp40/v_mp40.iqm MP40.glb` (FTEQW tool tested in CI, but original MP40 asset has NOT been obtained/tested).
 - Safety: sidecars are loaded on render thread when their corresponding original viewmodel first appears; heap allocations are limited to model changes. Turn preview back off with `xziel_iqm_viewmodels 0`.
-- Current Vril static stage does **not** handle skinning, animation clips, skeletal attachment maps, muzzle/hand correspondence or transparency/PBR. Do not promote to production solely based on CI Linux success.
+- The initial static stage did not handle skinning. Stage 2 adds manual animation preview; it **still lacks weapon-event clip mapping**, magazine attachment mapping, muzzle/hand correspondence and transparency/PBR. Do not promote to production solely based on CI Linux success.
 - Current runtime compile check: `.github/workflows/quake-vril-iqm-runtime.yml`. Real conversion check: `.github/workflows/quake-gltf-preflight.yml`.
 
 ### Real verification to earn promotion
@@ -45,3 +45,12 @@ Run unit tests with `cd tools/quake_gltf && python3 -m unittest -v` and inventor
 3. Add animation pose/skinning and event-to-clip mapping; validate load, fire, reload, ADS and magazine with original timings (not `cl.time` arbitrary looping).
 4. Build original Android ARM64 APK using our full XZIEL SDL2/GL4ES project and test on a real Pixel Fold; capture inline screenshots from live rendering.
 5. Certify fps/memory, correct restore of all modified GL states, and MDL fallback under missing or corrupt IQM.
+
+## Stage 2 — IQM CPU skeletal PREVIEW (2026-10-14)
+- Added `xiqm_matrix.h` (quaternion TRS, affine matrices, inverse bind) and `xiqm_animation.h` (IQM2 joints/poses, quantized frames and interpolated clips), tested against real converted Khronos GLB models with strict C99 compiler.
+- The Vril renderer reads 4 influence indices/weights, computes interpolated joint matrices on CPU, and transforms source vertices **without topology decimation**. Geometry can now move in preview rather than remaining in bind pose.
+- `xziel_iqm_viewmodels 1` enables experimental sidecars. `xziel_iqm_preview_clip 0` previews the first IQM clip using engine time; `-1` disables animation and shows bind pose. **This is explicitly not a real reload/fire/ADS event synchronization mechanism**. None of these preview options affect QuakeC.
+- Separate cache slots are kept for the primary weapon model and `viewent2` so alternating gun and hands does not reallocate/reload each frame.
+- A minimal GL state restore has been added around the optional renderer.
+- `.github/workflows/xziel-android-iqm-apk.yml` builds the existing XZIEL native Android game after patching its Vril clone; no IQM is auto-bundled into official gameplay. It cannot prove the MP40 visually renders until a rights-cleared MP40 input is supplied and an IQM sidecar is packaged.
+- Note: basic GL renderer currently supports diffuse/base-color textures only, no normal map/PBR parity; the CPU skinning path is experimental and requires device frame-time profiling. Runtime animation timing remains a blocker to a production swap.
