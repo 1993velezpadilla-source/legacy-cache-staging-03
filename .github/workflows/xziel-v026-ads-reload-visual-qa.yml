@@ -159,6 +159,13 @@ jobs:
           if ! grep -q 'XZIEL_IQM.*MODERN_MP40_STOCK_RELOAD_POSE_FOLLOW' dist/logcat.txt; then
              echo 'HIGH_POLY_GUN_RELOAD_POSE_NOT_APPLIED_ANDROID'; exit 1
           fi
+          # This is a separate TRUE two-pointer gesture. The earlier QA
+          # injected pixel coordinates as RAW event positions and pressed
+          # the LEFT STICK, making this gate falsely fail. Now insist that
+          # the engine observed a new ADS press after the raw-axis probe.
+          if ! grep -q 'XZIEL_IQM.*ADS_FRESH_TOUCH_GESTURE_HELD model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
+             echo 'ANDROID_MULTITOUCH_ADS_TOUCH_NOT_RECEIVED'; exit 1
+          fi
           if ! grep -q 'XZIEL_IQM.*RELOAD_STARTED_FROM_ADS model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
              echo 'RELOAD_FROM_GENUINE_ADS_NOT_OBSERVED: not proven triggered during held input'
              exit 1
@@ -204,6 +211,7 @@ jobs:
             dist/emulator.log
             dist/ads-input.txt
             dist/real-multitouch-input.txt
+            dist/touch-axis-limits.txt
             dist/apk-source.txt
             dist/apk.sha256
           if-no-files-found: warn

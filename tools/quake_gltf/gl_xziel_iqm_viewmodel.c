@@ -45,7 +45,7 @@ typedef struct {
     float ads_amplitude_y, ads_delta_y, ads_delta_z;
     float ads_front[3], ads_optical_y, ads_optical_z;
     int ads_front_valid, ads_optical_ready, ads_optical_locked, ads_optical_screen_reported;
-    int ads_fraction_logged, reload_from_ads_logged;
+    int ads_fraction_logged, reload_from_ads_logged, ads_touch_armed;
     float last_ads_held_time;
     int reload_first, reload_last, has_legacy_reload;
     xiqm_vertex *tri_vertices;
@@ -114,6 +114,7 @@ static void xiqm_free(void) {
     xiqm.ads_front_valid=xiqm.ads_optical_ready=xiqm.ads_optical_locked=0;
     xiqm.ads_optical_screen_reported=0;
     xiqm.ads_fraction_logged=0;
+    xiqm.ads_touch_armed=1;
     xiqm.reload_from_ads_logged=0;
     xiqm.last_ads_held_time=-100000.0f;
     xiqm.reload_first=xiqm.reload_last=xiqm.has_legacy_reload=0;
@@ -720,6 +721,16 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
                             Xziel_IQM_SourceADSOffsetLateral(),ads_fraction,
                             xiqm.ads_front_valid);
             origin_samples++;
+        }
+        /* Per-gesture proof: unlike ADS_SOURCE_HELD's one-shot log, this
+         * re-arms after physical release, so the Android emulator may probe
+         * touchscreen orientation without reporting a previous swipe as
+         * proof that a new multi-finger ADS button was pressed. */
+        if (ads_fraction<=0.15f)
+            xiqm.ads_touch_armed=1;
+        if (ads_fraction>=0.75f && xiqm.ads_touch_armed) {
+            XIQM_ANDROID_LOG("ADS_FRESH_TOUCH_GESTURE_HELD model=%s fraction=%.4f",xiqm.model,ads_fraction);
+            xiqm.ads_touch_armed=0;
         }
         if (ads_fraction>=0.90f && !xiqm.ads_fraction_logged) {
             XIQM_ANDROID_LOG("ADS_SOURCE_HELD model=%s fraction=%.4f lateral=%.4f",
