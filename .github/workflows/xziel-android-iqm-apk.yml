@@ -62,3 +62,80 @@ jobs:
           path: dist/
           if-no-files-found: warn
           retention-days: 7
+
+  android-iqm-emulator-smoke:
+    needs: android-iqm-debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    env:
+      ANDROID_AVD_HOME: ${{ runner.temp }}/xziel-iqm-avd
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: XZIEL-IQM-EXPERIMENTAL-APK
+          path: dist
+      - name: Install x86_64 emulator image
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          "$SDKMANAGER" "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
+      - name: Start emulator, install APK, verify first frame
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_AVD_HOME" dist
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          AVDMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name avdmanager | sort -V | tail -n 1)"
+          printf 'no\n' | "$AVDMANAGER" create avd --force --name xziel-iqm-smoke \
+            --package 'system-images;android-35;google_apis;x86_64' --device pixel_6
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm || true; fi
+          nohup "$ANDROID_HOME/emulator/emulator" @xziel-iqm-smoke \
+            -no-window -no-snapshot -no-audio -no-boot-anim \
+            -gpu swiftshader_indirect -memory 2048 > dist/emulator.log 2>&1 &
+          timeout 180 "$ADB" wait-for-device
+          BOOTED=0
+          for i in $(seq 1 90); do
+            if [ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then BOOTED=1; break; fi
+            sleep 2
+          done
+          test "$BOOTED" = 1
+          "$ADB" install -r dist/XZIEL-IQM-EXPERIMENTAL-debug.apk
+          "$ADB" shell settings put secure immersive_mode_confirmations confirmed || true
+          "$ADB" logcat -c
+          "$ADB" shell am start -W -n com.xziel.nzp/org.libsdl.app.NZPActivity \
+            --ez xziel_ci_hud_preview true | tee dist/launch.txt
+          sleep 40
+          "$ADB" exec-out screencap -p > dist/android-first-frame.png
+          "$ADB" logcat -d -v threadtime > dist/logcat.txt
+          "$ADB" shell run-as com.xziel.nzp cat files/nzp-runtime/.xziel-stage \
+            > dist/stage.txt 2>/dev/null || true
+          "$ADB" shell run-as com.xziel.nzp cat files/nzp-runtime/.xziel-last-error \
+            > dist/last-error.txt 2>/dev/null || true
+          echo "===== FIRST FRAME STATE ====="
+          cat dist/stage.txt
+          PID="$("$ADB" shell pidof com.xziel.nzp 2>/dev/null | tr -d '\r' || true)"
+          test -n "$PID"
+          grep -q FIRST_FRAME_OK dist/stage.txt
+          if grep -E 'Fatal signal|EGL_BAD_CONTEXT|FATAL EXCEPTION|stage=SYS_ERROR' dist/logcat.txt; then
+            echo "Android crash marker detected"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import struct
+          from pathlib import Path
+          p=Path('dist/android-first-frame.png')
+          data=p.read_bytes()
+          assert data[:8]==b'\x89PNG\r\n\x1a\n', 'No PNG screenshot'
+          width,height=struct.unpack_from('>II',data,16)
+          assert width>=800 and height>=480, (width,height)
+          print('ANDROID_IQM_BASELINE_SMOKE_GREEN',width,height)
+          PY
+      - name: Upload Android render and crash diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: XZIEL-IQM-EMULATOR-RENDER-DIAGNOSTICS
+          path: dist/
+          if-no-files-found: warn
+          retention-days: 14
