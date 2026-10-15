@@ -130,8 +130,12 @@ jobs:
             > dist/stage.txt 2>/dev/null || true
           grep -q FIRST_FRAME_OK dist/stage.txt
           grep -q 'XZIEL_IQM.*ORIGINAL_QC_ADS y=11.400' dist/logcat.txt
-          if ! grep -q 'XZIEL_IQM.*OPTICAL_SIGHT_CENTERED model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
-             echo 'ADS_OPTICAL_CENTERING_STILL_UNVERIFIED: separate test, not evidence of reload failure'
+          # A computed optical translation does not prove the sight landed
+          # in the center of the real Android camera. Demand <3% NDC.
+          if ! grep -q 'XZIEL_IQM.*ADS_CENTER_PROJECTION_GREEN model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
+             grep -E 'XZIEL_IQM.*(ADS_SOURCE_INTERPOLATION|OPTICAL_|ADS_CENTER)' dist/logcat.txt | tail -n 40 || true
+             echo 'ADS_ACTUAL_CAMERA_PROJECTION_STILL_RED: no proven front iron sight alignment'
+             exit 1
           fi
           grep -q 'XZIEL_IQM.*DRAWN model=models/weapons/mp40/v_mp40.mdl triangles=14450 textured_batches=2' dist/logcat.txt
           grep -q 'XZIEL_IQM.*MODERN_MAGAZINE_COMPONENT model=models/weapons/mp40/v_mp40.mdl faces=894' dist/logcat.txt
