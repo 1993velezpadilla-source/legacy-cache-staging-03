@@ -80,6 +80,13 @@ jobs:
           qa='python3 "$ROOT/scripts/patch_quakec_mobile_v024.py" "$DEPS/quakec"'
           assert text.count(qa)==1, 'Cannot locate post-v024 QuakeC patch position'
           text=text.replace(qa, qa+'\npython3 "$XZIEL_IQM_TOOLS/patch_mp40_smoke_quakec.py" "$DEPS/quakec"')
+          asset_copy='cp -a "$XZIEL_EXTRA_ASSET_DIR"/. "$ASSET_WORK/nzp/"'
+          assert text.count(asset_copy)==1, 'Missing asset overlay integration in builder'
+          text=text.replace(asset_copy,asset_copy+
+             '\npython3 "$XZIEL_IQM_TOOLS/fit_iqm_mdl.py" '
+             '"$ASSET_WORK/nzp/models/weapons/mp40/v_mp40.mdl" '
+             '"$ASSET_WORK/nzp/models/weapons/mp40/v_mp40.iqm" '
+             '"$ASSET_WORK/nzp/models/weapons/mp40/v_mp40.iqmfit"')
           p.write_text(text)
           PY
       - name: Assemble real native Android project including HIGH-FIDELITY MP40
@@ -89,8 +96,8 @@ jobs:
           cd xziel-builder
           bash scripts/prepare_android.sh
           grep -q 'xziel_iqm_preview_clip' build/deps/vril/source/platform/sdl/gl/gl_xziel_iqm_viewmodel.c
-          grep -q 'MP40_SMOKE_START_WEAPON_PATCHED' <(echo 'MP40_SMOKE_START_WEAPON_PATCHED')
           unzip -l build/android-project/app/src/main/assets/nzp-data.zip | grep -q 'models/weapons/mp40/v_mp40.iqm'
+          unzip -l build/android-project/app/src/main/assets/nzp-data.zip | grep -q 'models/weapons/mp40/v_mp40.iqmfit'
           grep -q 'W_MP40, 32, 192' build/deps/quakec/source/server/player/player_core.qc
           grep -q '"xziel_iqm_viewmodels", "1"' build/deps/vril/source/platform/sdl/gl/gl_xziel_iqm_viewmodel.c
           cd build/android-project
