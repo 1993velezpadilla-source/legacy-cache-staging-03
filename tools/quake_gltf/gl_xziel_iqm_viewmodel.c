@@ -635,7 +635,11 @@ static void xiqm_aim_optical_sight(float fraction) {
          * ACTUAL iron-sight landmark with the actual post-transform GL
          * matrices, in NDC. This makes an objectively measurable ADS gate.
          * Log only a single first steady-ADS measurement per weapon load. */
-        if (fraction>=0.997f && !xiqm.ads_optical_screen_reported) {
+        /* The ORIGINAL Vril ADS smoothing reaches ~0.98 within the live
+         * Android hold interval, but generally not 0.997. The old 0.997
+         * test never fired even when the actual sight was visibly centered
+         * (2026-10-15 emulator evidence). Measure, do not silently skip. */
+        if (fraction>=0.98f && !xiqm.ads_optical_screen_reported) {
             GLfloat mv[16], projection[16], view_pt[4];
             float x,y,w,ndcx,ndcy;
             glGetFloatv(GL_MODELVIEW_MATRIX,mv);
