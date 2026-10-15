@@ -34,6 +34,7 @@ typedef struct {
     char model[MAX_QPATH];
     int available;
     unsigned triangles, num_batches;
+    float fit_scale, fit_pos[3];
     xiqm_vertex *tri_vertices;
     xiqm_batch *batches;
 } xiqm_state;
@@ -73,6 +74,8 @@ static void xiqm_free(void) {
     xiqm.batches = NULL;
     xiqm.triangles = 0;
     xiqm.num_batches = 0;
+    xiqm.fit_scale = 1.0f;
+    xiqm.fit_pos[0]=xiqm.fit_pos[1]=xiqm.fit_pos[2]=0.0f;
     xiqm.available = 0;
 }
 static const char *xiqm_name(const unsigned char *text, unsigned length, unsigned idx) {
@@ -116,6 +119,7 @@ static int xiqm_load(const char *mdlpath) {
     int has_position = 0, has_uv = 0, ok = 0;
     size_t len, stem_len;
     xiqm.available = 0;
+    xiqm.fit_scale = 1.0f;
     len = strlen(mdlpath);
     if (len < 5 || len + 1 >= sizeof(path) || strcmp(mdlpath + len - 4, ".mdl"))
         return 0;
@@ -233,6 +237,28 @@ static int xiqm_load(const char *mdlpath) {
                 if (v->weights[j] && v->indices[j]>=xza.joints) goto done;
         }
     }
+    {
+        char fitname[160], fitbuf[128];
+        FILE *fitfile=NULL;
+        int fitbytes;
+        float s,tx,ty,tz;
+        if (strlen(mdlpath)+5 < sizeof(fitname)) {
+            snprintf(fitname,sizeof(fitname),"%.*s.iqmfit",(int)(strlen(mdlpath)-4),mdlpath);
+            fitbytes=COM_FOpenFile(fitname,&fitfile);
+            if (fitfile && fitbytes>0 && fitbytes<(int)sizeof(fitbuf) &&
+                fread(fitbuf,1,(size_t)fitbytes,fitfile)==(size_t)fitbytes) {
+                fitbuf[fitbytes]=0;
+                if (sscanf(fitbuf,"%f %f %f %f",&s,&tx,&ty,&tz)==4 &&
+                    isfinite(s)&&isfinite(tx)&&isfinite(ty)&&isfinite(tz)&&
+                    s>0.001f && s<1000.0f) {
+                    xiqm.fit_scale=s;
+                    xiqm.fit_pos[0]=tx;xiqm.fit_pos[1]=ty;xiqm.fit_pos[2]=tz;
+                    Con_Printf("XZIEL IQM alignment %s scale=%.3f translate=%.3f %.3f %.3f\\n",fitname,s,tx,ty,tz);
+                }
+            }
+            if (fitfile) fclose(fitfile);
+        }
+    }
     xiqm.triangles = tri_count;
     xiqm.num_batches = mesh_count;
     xiqm.available = 1;
@@ -304,6 +330,8 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     texture_was_enabled=glIsEnabled(GL_TEXTURE_2D);
     glPushMatrix();
     R_RotateForEntity(e, e->scale);
+    glTranslatef(xiqm.fit_pos[0],xiqm.fit_pos[1],xiqm.fit_pos[2]);
+    glScalef(xiqm.fit_scale,xiqm.fit_scale,xiqm.fit_scale);
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     /* Diagnostic path keeps both sides visible until winding is verified. */
