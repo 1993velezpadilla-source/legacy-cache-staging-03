@@ -58,8 +58,8 @@ def main(glb,iqm,overlay):
     out=target/"v_mp40.iqm"
     shutil.copyfile(iqm,out)
     segmentation=generate_reload_parts(iqm,target/"v_mp40.iqmparts")
-    if segmentation["magazine_triangles"]!=348:
-        raise ValueError("MP40 magazine must remain a source-derived 348-triangle component")
+    if segmentation["magazine_triangles"]!=894:
+        raise ValueError("MP40 magazine must include its 894 source-derived triangles across all UV seams")
     licensepath=Path(overlay)/"licenses/MP40-MoonyState-CC-BY-4.0.txt"
     licensepath.parent.mkdir(parents=True,exist_ok=True)
     licensepath.write_text(ATTRIBUTION)
