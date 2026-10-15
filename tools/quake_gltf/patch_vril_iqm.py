@@ -30,6 +30,19 @@ def patch(root: Path):
     # Verify all edits before writing any target file.
     model = gl_dir / "gl_model.c"
     main = gl_dir / "gl_rmain.c"
+    # Original Vril source interpolates ADS in a camera-space vector;
+    # the world entity origin must never be misread as ADS progress.
+    view = root / "source" / "view.c"
+    if not view.is_file():
+        raise RuntimeError("Vril view.c missing; cannot bind source ADS timing")
+    view_source = view.read_text()
+    view_updated = replace_once(
+        view_source,
+        "static vec3_t cADSOfs;\n",
+        "static vec3_t cADSOfs;\n"
+        "float Xziel_IQM_SourceADSOffsetLateral(void) { return cADSOfs[0]; }\n",
+        "authoritative camera-space ADS offset"
+    )
     model_body = model.read_text()
     main_body = main.read_text()
 
@@ -90,6 +103,7 @@ def patch(root: Path):
 
     dest = gl_dir / source.name
     # Exactly one C file, no alteration of QuakeC, BSP or original MDL assets.
+    view.write_text(view_updated)
     model.write_text(model_updated)
     main.write_text(main_updated)
     # Existing XZIEL Sanctum static-mesh patch used the wrong legacy GL_Bind symbol.
@@ -102,7 +116,7 @@ def patch(root: Path):
     shutil.copy2(source, dest)
     for header_name in ("xiqm_matrix.h", "xiqm_animation.h"):
         shutil.copy2(source.with_name(header_name), gl_dir / header_name)
-    print("XZIEL_IQM_PATCHED: opt-in skeletal preview sidecars; MDL fallback")
+    print("XZIEL_IQM_PATCHED: source camera ADS interpolator + optional original hands overlay; MDL fallback")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
