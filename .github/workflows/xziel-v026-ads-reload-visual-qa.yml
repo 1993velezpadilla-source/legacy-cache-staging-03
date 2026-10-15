@@ -24,9 +24,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          gh run download 38673411282 -R "$GITHUB_REPOSITORY" \
+          # Pin the 894-face magazine build, NOT obsolete 348-face test APK.
+          # Wait until its APK artifact is published (Android emulator can still be running).
+          RUN_ID=38674035851
+          READY=0
+          for attempt in $(seq 1 120); do
+            count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts | map(select(.name=="XZIEL-v026-DeadCell-DEV-MP40-IQM-APK" and .expired==false)) | length')"
+            if [ "$count" = 1 ]; then READY=1; break; fi
+            state="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')"
+            if [ "$state" = failure ] || [ "$state" = cancelled ]; then
+              echo "Pinned 894-magazine Android build FAILED: $RUN_ID"; exit 1
+            fi
+            sleep 5
+          done
+          test "$READY" = 1
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" \
             -n XZIEL-v026-DeadCell-DEV-MP40-IQM-APK -D dist
-          echo 'ea103515275aea0bc67c7cf084e91e7b11d1b17476451250e39723f3bf72d592  dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk' | sha256sum -c
+          sha256sum dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk | tee dist/apk.sha256
+          test -s dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk
       - name: Install Android emulator
         shell: bash
         run: |
