@@ -133,6 +133,7 @@ static int xiqm_load(const char *mdlpath) {
     memcpy(path + len - 4, ".iqm", 5);
     file_len = COM_FOpenFile(path, &f);
     if (file_len < 124 || (unsigned)file_len > XIQM_MAX_BYTES || !f) {
+        XIQM_ANDROID_LOG("SIDECAR_NOT_FOUND %s file_len=%d file=%p",path,file_len,(void*)f);
         if (f) fclose(f);
         return 0;
     }
@@ -390,6 +391,13 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
  * Slot caching is per unique model path; cvars default OFF to protect release.
  * Missing IQM falls straight back to the original MDL in R_DrawEntitiesOnList. */
 qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
+    static int debug_first=0;
+    if (!debug_first) {
+        XIQM_ANDROID_LOG("VIEWMODEL_ENTRY enabled=%.1f model=%s",
+                         xziel_iqm_viewmodels.value,
+                         (e && e->model)?e->model->name:"(missing)");
+        debug_first=1;
+    }
     if (xziel_iqm_viewmodels.value==0 || !e || !e->model)
         return false;
     return xiqm_draw_entity(e, e==&cl.viewent2 ? 1u : 0u);
