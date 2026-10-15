@@ -1,0 +1,123 @@
+name: XZIEL v026 Live ADS and MP40 Reload Visual Gauntlet
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/xziel-v026-ads-reload-visual-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  mp40-live-ads-reload-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ANDROID_AVD_HOME: ${{ github.workspace }}/.android-avd
+    steps:
+      - uses: actions/checkout@v4
+      - name: Obtain verified v0.26 Dead Cell Developer + MP40 ADS/Reload APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download 38666730372 -R "$GITHUB_REPOSITORY" \
+            -n XZIEL-v026-DeadCell-DEV-MP40-IQM-APK -D dist
+          echo '8d477d58476842eca2f4cfcdb251576ee591c30ac1f2569daa68d17ebfbea3a3  dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk' | sha256sum -c
+      - name: Install Android emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          "$SDKMANAGER" "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
+      - name: Press official controls: ADS held, fire and reload, capture real screenshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_AVD_HOME"
+          AVDMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name avdmanager | sort -V | tail -n 1)"
+          printf 'no\n' | "$AVDMANAGER" create avd --force --name xziel-v026-ads-reload \
+            --package 'system-images;android-35;google_apis;x86_64' --device pixel_6
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm || true; fi
+          nohup "$ANDROID_HOME/emulator/emulator" @xziel-v026-ads-reload \
+            -no-window -no-snapshot -no-audio -no-boot-anim \
+            -gpu swiftshader_indirect -memory 2048 > dist/emulator.log 2>&1 &
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          timeout 180 "$ADB" wait-for-device
+          READY=0
+          for i in $(seq 1 90); do
+            if [ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then READY=1; break; fi
+            sleep 2
+          done
+          test "$READY" = 1
+          "$ADB" install -r dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk
+          "$ADB" shell settings put secure immersive_mode_confirmations confirmed || true
+          "$ADB" logcat -c
+          "$ADB" shell am start -W -n \
+            com.xziel.deadcell.iqmdev/org.libsdl.app.NZPActivity \
+            --es xziel_ci_map xziel_proto | tee dist/launch.txt
+          FOUND=0
+          for i in $(seq 1 60); do
+            if "$ADB" logcat -d -s XZIEL_IQM:I '*:S' 2>/dev/null | \
+              grep -q 'DRAWN model=models/weapons/mp40/v_mp40.mdl triangles=14450'; then
+              FOUND=1; break
+            fi
+            sleep 1
+          done
+          if [ "$FOUND" != 1 ]; then
+            echo "MP40 did not render in time"; exit 1
+          fi
+          "$ADB" exec-out screencap -p > dist/00-hipfire-real.png
+          # From the original v0.26 HUD defaults, norm=(x,y):
+          # ADS=(.695,.575), FIRE=(.885,.585), RELOAD=(.805,.785).
+          # Target emulator is 2400x1080; press ADS as a sustained touch.
+          "$ADB" shell input swipe 1668 621 1668 621 2000 > dist/ads-input.txt 2>&1 &
+          ADS_PID=$!
+          sleep 1
+          "$ADB" exec-out screencap -p > dist/01-ads-held-real.png
+          wait "$ADS_PID"
+          sleep 0.3
+          "$ADB" shell input swipe 2124 632 2124 632 900
+          sleep 0.2
+          "$ADB" shell input tap 1932 848
+          sleep 0.3
+          "$ADB" exec-out screencap -p > dist/02-reload-early-real.png
+          sleep 0.9
+          "$ADB" exec-out screencap -p > dist/03-reload-middle-real.png
+          "$ADB" logcat -d -v threadtime > dist/logcat.txt
+          "$ADB" shell run-as com.xziel.deadcell.iqmdev cat files/nzp-runtime/.xziel-stage \
+            > dist/stage.txt 2>/dev/null || true
+          grep -q FIRST_FRAME_OK dist/stage.txt
+          grep -q 'XZIEL_IQM.*ORIGINAL_QC_ADS y=11.400' dist/logcat.txt
+          grep -q 'XZIEL_IQM.*DRAWN model=models/weapons/mp40/v_mp40.mdl triangles=14450 textured_batches=2' dist/logcat.txt
+          if ! grep -q 'XZIEL_IQM.*RELOAD_LEGACY_ANIMATED_FALLBACK' dist/logcat.txt; then
+             echo "RELOAD_VISUAL_QA_PENDING: automatic HUD test did not observe the actual animated MDL reload."
+             exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          from struct import unpack_from
+          for p in sorted(Path("dist").glob("*.png")):
+              blob=p.read_bytes()
+              assert blob[:8]==b"\x89PNG\r\n\x1a\n",p
+              w,h=unpack_from(">II",blob,16)
+              assert (w,h)==(2400,1080),(p,w,h)
+              print("ACTUAL_ANDROID_ADS_RELOAD_FRAME",p,w,h,len(blob))
+          PY
+      - name: Upload visual evidence whether test passes or fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: XZIEL-DeadCell-v026-ADS-Reload-Real-Screenshots
+          path: |
+            dist/*.png
+            dist/logcat.txt
+            dist/stage.txt
+            dist/launch.txt
+            dist/emulator.log
+            dist/ads-input.txt
+          if-no-files-found: warn
+          retention-days: 14
