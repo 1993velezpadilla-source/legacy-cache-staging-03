@@ -173,6 +173,12 @@ jobs:
           PID="$("$ADB" shell pidof com.xziel.nzp 2>/dev/null | tr -d '\r' || true)"
           test -n "$PID"
           grep -q FIRST_FRAME_OK dist/stage.txt
+          echo '===== ACTUAL IQM MODEL RUNTIME EVENTS ====='
+          grep -E 'XZIEL_IQM|mp40' dist/logcat.txt | tail -n 40 || true
+          if ! grep -E 'XZIEL_IQM.*LOADED models/weapons/mp40/v_mp40.iqm' dist/logcat.txt; then
+            echo 'FAILED: MP40 high-poly IQM was bundled but NOT proven loaded/rendered; no green claim'
+            exit 1
+          fi
           if grep -E 'Fatal signal|EGL_BAD_CONTEXT|FATAL EXCEPTION|stage=SYS_ERROR' dist/logcat.txt; then
             echo "Android crash marker detected"
             exit 1
