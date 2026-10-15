@@ -43,6 +43,11 @@ int main(int argc,char **argv){
         for(i=0;i<a->clips;i++){
             ok=xza_eval(a,i,0.0f)&&xza_eval(a,i,0.025f);
             if(!ok)break;
+            {
+                float point[3]={0,0,0},evaluated[3];
+                xzm_point(&a->skin[0],point,evaluated);
+                if(!isfinite(evaluated[0])||!isfinite(evaluated[1])||!isfinite(evaluated[2])){ok=0;break;}
+            }
             printf("clip=%s joints=%u frames=%u fps=%.2f\n",
                 a->clip[i].name,a->joints,a->clip[i].count,a->clip[i].fps);
         }
