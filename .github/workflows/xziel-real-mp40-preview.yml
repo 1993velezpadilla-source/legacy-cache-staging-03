@@ -185,8 +185,14 @@ jobs:
             echo 'FAILED: MP40 high-poly IQM was bundled but NOT proven loaded/rendered; no green claim'
             exit 1
           fi
-          if grep -E 'Fatal signal|EGL_BAD_CONTEXT|FATAL EXCEPTION|stage=SYS_ERROR' dist/logcat.txt; then
-            echo "Android crash marker detected"
+          if ! grep -Eq 'XZIEL_IQM.*DRAWN model=models/weapons/mp40/v_mp40.mdl triangles=14450 textured_batches=[1-9]' dist/logcat.txt; then
+            echo 'FAILED: IQM render did not draw textured real MP40 geometry'
+            exit 1
+          fi
+          # Android system image sometimes crashes Google Wallpaper in a separate process.
+          # Reject crashes ONLY from our app, not unrelated emulator background services.
+          if grep -Eq 'AndroidRuntime: Process: com.xziel.nzp([, ]|$)|>>> com.xziel.nzp <<<|stage=SYS_ERROR' dist/logcat.txt; then
+            echo "XZIEL Android app-specific crash marker detected"
             exit 1
           fi
           python3 - <<'PY'
@@ -197,7 +203,7 @@ jobs:
           assert data[:8]==b'\x89PNG\r\n\x1a\n', 'No PNG screenshot'
           width,height=struct.unpack_from('>II',data,16)
           assert width>=800 and height>=480, (width,height)
-          print('ANDROID_IQM_BASELINE_SMOKE_GREEN',width,height)
+          print('ANDROID_REAL_MP40_TEXTURED_RENDER_GREEN',width,height)
           PY
       - name: Upload Android MP40 render and crash diagnostics
         if: always()
