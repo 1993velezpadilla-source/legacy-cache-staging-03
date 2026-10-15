@@ -6,6 +6,10 @@ on:
       - '.github/workflows/quake-gltf-preflight.yml'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   python-structural-tests:
     runs-on: ubuntu-latest

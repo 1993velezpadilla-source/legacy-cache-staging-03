@@ -5,6 +5,10 @@ on:
     paths:
       - 'tools/quake_gltf/blender_split_original_mp40_hands.py'
       - '.github/workflows/mp40-authentic-hands-source.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 jobs:
