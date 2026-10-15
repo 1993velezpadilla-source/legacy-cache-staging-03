@@ -135,6 +135,15 @@ jobs:
              echo "RELOAD_SAME_MODEL_FAILED: the new modern MP40 reload was not observed"
              exit 1
           fi
+          if ! grep -q 'XZIEL_IQM.*ORIGINAL_HANDS_RELOAD_FRAMES_ADVANCE model=models/weapons/mp40/v_mp40_hands_only.mdl' dist/logcat.txt; then
+            echo 'AUTHENTIC_HANDS_FRAME_ADVANCE_NOT_OBSERVED: still RED'
+            exit 1
+          fi
+          echo '===== LIVE ADS / HANDS / MAGAZINE OPTICAL DIAGNOSTIC ====='
+          grep -E 'XZIEL_IQM.*(ADS_ORIGIN|OPTICAL_|ORIGINAL_HANDS|MAGAZINE_REAL|RELOAD_SAME)' dist/logcat.txt | tail -n 80 || true
+          if ! grep -q 'XZIEL_IQM.*ORIGINAL_HANDS_SAME_46_POSE model=models/weapons/mp40/v_mp40_hands_only.mdl' dist/logcat.txt; then
+             echo 'AUTHENTIC_HANDS_NOT_DRAWN during Android ADS/reload'; exit 1
+          fi
           if grep -q 'XZIEL_IQM.*RELOAD_LEGACY_ANIMATED_FALLBACK' dist/logcat.txt; then
              echo "ILLEGAL_OLD_VRIL_MODEL_SWAP during modern MP40 reload"
              exit 1
