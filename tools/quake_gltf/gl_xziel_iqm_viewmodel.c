@@ -50,6 +50,7 @@ typedef struct {
     xiqm_batch *batches;
     unsigned char *magazine_bits;
     unsigned magazine_faces;
+    unsigned magazine_motion_logged;
     float magazine_drop, magazine_side;
 } xiqm_state;
 
@@ -87,6 +88,7 @@ static void xiqm_free(void) {
     free(xiqm.magazine_bits);
     xiqm.magazine_bits=NULL;
     xiqm.magazine_faces=0;
+    xiqm.magazine_motion_logged=0;
     xiqm.magazine_drop=xiqm.magazine_side=0.0f;
     xiqm.tri_vertices = NULL;
     xiqm.batches = NULL;
@@ -420,6 +422,7 @@ static void xiqm_update_pose(float reload_progress) {
     int active=0;
     float magazine_movement=xiqm_magazine_motion(reload_progress);
     float magazine_side=0.0f;
+    unsigned translated_vertices=0;
     if (reload_progress>=0.16f && reload_progress<=0.88f) {
         if(reload_progress<0.42f)
             magazine_side=xiqm_smooth((reload_progress-0.16f)/0.26f);
@@ -457,9 +460,27 @@ static void xiqm_update_pose(float reload_progress) {
             /* Same modern magazine descends from receiver, drifts LEFT
              * on extraction, then inserts before source reload completes.
              * This deliberately does NOT resurrect the Quake MDL gun. */
-            v->p[1]-=xiqm.magazine_side*magazine_side;
-            v->p[2]-=xiqm.magazine_drop*magazine_movement;
+            {
+                float old_z=v->p[2];
+                v->p[1]-=xiqm.magazine_side*magazine_side;
+                v->p[2]-=xiqm.magazine_drop*magazine_movement;
+                if (!xiqm.magazine_motion_logged && magazine_movement>=0.8f &&
+                    fabsf(v->p[2]-old_z)>0.001f)
+                    translated_vertices++;
+            }
         }
+    }
+    /* The existing reload-start log only proves that the legacy frame range
+     * was entered. This later probe proves the renderer actually translated
+     * every selected high-poly IQM vertex in a nonzero extraction pose. */
+    if (!xiqm.magazine_motion_logged && magazine_movement>=0.8f &&
+        translated_vertices==xiqm.magazine_faces*3u &&
+        xiqm.magazine_faces>0u) {
+        XIQM_ANDROID_LOG("MAGAZINE_REAL_VERTEX_TRANSLATION model=%s faces=%u vertices=%u down=%.5f side=%.5f progress=%.3f",
+                         xiqm.model,xiqm.magazine_faces,translated_vertices,
+                         xiqm.magazine_drop*magazine_movement,
+                         xiqm.magazine_side*magazine_side,reload_progress);
+        xiqm.magazine_motion_logged=1;
     }
 }
 /* Fixed-function optical calibration: align the real front iron sight to
