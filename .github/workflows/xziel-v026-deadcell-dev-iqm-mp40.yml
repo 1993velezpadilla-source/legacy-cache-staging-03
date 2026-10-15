@@ -183,7 +183,7 @@ jobs:
               # [-11400,6500,-1000]/1000 => e.origin[1]=+11.4, z=+6.5
               assert abs(float(metadata[4])-11.4)<0.001,metadata
               assert abs(float(metadata[5]))>1.0 and abs(float(metadata[6]))>0.1,metadata
-              assert [int(float(x)) for x in metadata[7:]]==[4,31],metadata
+              assert [int(float(x)) for x in metadata[7:9]]==[4,31],metadata
               assert 0.50 < float(metadata[9]) < 0.59,metadata
               assert abs(float(metadata[10]))<0.03,metadata
               assert 0.12 < float(metadata[11]) < 0.15,metadata
