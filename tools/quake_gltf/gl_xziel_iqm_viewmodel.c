@@ -44,7 +44,7 @@ typedef struct {
     /* Optional model-specific original-QuakeC ADS alignment. */
     float ads_amplitude_y, ads_delta_y, ads_delta_z;
     float ads_front[3], ads_optical_y, ads_optical_z;
-    int ads_front_valid, ads_optical_ready, ads_optical_locked;
+    int ads_front_valid, ads_optical_ready, ads_optical_locked, ads_optical_screen_reported;
     int reload_first, reload_last, has_legacy_reload;
     xiqm_vertex *tri_vertices;
     xiqm_batch *batches;
@@ -103,6 +103,7 @@ static void xiqm_free(void) {
     xiqm.ads_front[0]=xiqm.ads_front[1]=xiqm.ads_front[2]=0.0f;
     xiqm.ads_optical_y=xiqm.ads_optical_z=0.0f;
     xiqm.ads_front_valid=xiqm.ads_optical_ready=xiqm.ads_optical_locked=0;
+    xiqm.ads_optical_screen_reported=0;
     xiqm.reload_first=xiqm.reload_last=xiqm.has_legacy_reload=0;
     xiqm.available = 0;
     xiqm.first_draw_logged = 0;
@@ -550,6 +551,38 @@ static void xiqm_aim_optical_sight(float fraction) {
         float blend=fraction*fraction; /* ease in with authoritative CSQC ADS */
         glTranslatef(0.0f,blend*xiqm.ads_optical_y/xiqm.fit_scale,
                     blend*xiqm.ads_optical_z/xiqm.fit_scale);
+        /* A 'correction computed' marker isn't visual proof. Project the
+         * ACTUAL iron-sight landmark with the actual post-transform GL
+         * matrices, in NDC. This makes an objectively measurable ADS gate.
+         * Log only a single first steady-ADS measurement per weapon load. */
+        if (fraction>=0.997f && !xiqm.ads_optical_screen_reported) {
+            GLfloat mv[16], projection[16], view_pt[4];
+            float x,y,w,ndcx,ndcy;
+            glGetFloatv(GL_MODELVIEW_MATRIX,mv);
+            glGetFloatv(GL_PROJECTION_MATRIX,projection);
+            for(k=0;k<4;k++)
+                view_pt[k]=mv[k]*xiqm.ads_front[0]+mv[k+4]*xiqm.ads_front[1]+
+                           mv[k+8]*xiqm.ads_front[2]+mv[k+12];
+            x=xiqm_cliprow(projection,view_pt,0);
+            y=xiqm_cliprow(projection,view_pt,1);
+            w=xiqm_cliprow(projection,view_pt,3);
+            if (isfinite(w) && w>0.00001f && isfinite(x) && isfinite(y)) {
+                ndcx=x/w; ndcy=y/w;
+                XIQM_ANDROID_LOG("ADS_SIGHT_SCREEN_ERROR_NDC model=%s x=%.6f y=%.6f fraction=%.4f",
+                                 xiqm.model,ndcx,ndcy,fraction);
+                if (fabsf(ndcx)<=0.03f && fabsf(ndcy)<=0.03f) {
+                    XIQM_ANDROID_LOG("ADS_CENTER_PROJECTION_GREEN model=%s x=%.6f y=%.6f",
+                                     xiqm.model,ndcx,ndcy);
+                } else {
+                    XIQM_ANDROID_LOG("ADS_CENTER_PROJECTION_RED model=%s x=%.6f y=%.6f",
+                                     xiqm.model,ndcx,ndcy);
+                }
+            } else {
+                XIQM_ANDROID_LOG("ADS_CENTER_PROJECTION_RED model=%s invalid_clip_w=%.6f x=%.6f y=%.6f",
+                                 xiqm.model,w,x,y);
+            }
+            xiqm.ads_optical_screen_reported=1;
+        }
     }
 }
 static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
@@ -587,8 +620,8 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     cull_was_enabled=glIsEnabled(GL_CULL_FACE);
     texture_was_enabled=glIsEnabled(GL_TEXTURE_2D);
     if (i<2)reload_progress=xiqm_reload_progress(e->frame);
-    /* e->origin[1] is interpolated live by authoritative CSQC
-     * ViewModel_GetADSPosition; no parallel ADS clock is introduced. */
+    /* cADSOfs[0] is Vril's interpolated camera-space viewmodel offset.
+     * Never divide e->origin[1] (absolute WORLD Y) to derive ADS progress. */
     if (i<2 && xiqm.ads_amplitude_y>1.0f) {
         static int origin_samples=0;
         /* e->origin is WORLD POSITION (e.g. -220,-100,64), NOT an
