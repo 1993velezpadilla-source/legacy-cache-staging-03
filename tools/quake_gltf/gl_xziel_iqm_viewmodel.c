@@ -38,14 +38,17 @@ typedef struct {
     xiqm_batch *batches;
 } xiqm_state;
 
-static xiqm_state xiqm_slots[2];
+#define XIQM_SLOT_COUNT 24u
+static xiqm_state xiqm_slots[XIQM_SLOT_COUNT];
 static xiqm_state *xiqm_active = &xiqm_slots[0];
 #define xiqm (*xiqm_active)
 static cvar_t xziel_iqm_viewmodels = {"xziel_iqm_viewmodels", "0", true};
+static cvar_t xziel_iqm_entities = {"xziel_iqm_entities", "0", true};
 static cvar_t xziel_iqm_preview_clip = {"xziel_iqm_preview_clip", "-1", true};
 
 void Xziel_IQM_Init(void) {
     Cvar_RegisterVariable(&xziel_iqm_viewmodels);
+    Cvar_RegisterVariable(&xziel_iqm_entities);
     Cvar_RegisterVariable(&xziel_iqm_preview_clip);
 }
 
@@ -86,7 +89,7 @@ static void xiqm_strncpy(char *dst, size_t capacity, const char *src) {
 }
 
 #include "xiqm_animation.h"
-static xzanim xza_slots[2];
+static xzanim xza_slots[XIQM_SLOT_COUNT];
 static xzanim *xza_active=&xza_slots[0];
 #define xza (*xza_active)
 /* Safe fragment: the source material can name a texture within a model folder
@@ -279,13 +282,10 @@ static void xiqm_update_pose(void) {
         memcpy(v->p,v->bind,sizeof(v->bind));
     }
 }
-qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
-    unsigned i;
+static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     GLboolean depth_was_enabled, blend_was_enabled, cull_was_enabled, texture_was_enabled;
-    if (xziel_iqm_viewmodels.value == 0 || !e || !e->model)
+    if (!e || !e->model || i>=XIQM_SLOT_COUNT)
         return false;
-    /* Separate gun and second-view-model caches: no reload every frame. */
-    i=(e==&cl.viewent2)?1u:0u;
     xiqm_active=&xiqm_slots[i];
     xza_active=&xza_slots[i];
     if (strcmp(xiqm.model, e->model->name)) {
@@ -347,4 +347,32 @@ qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
     if (depth_was_enabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     if (texture_was_enabled) glEnable(GL_TEXTURE_2D); else glDisable(GL_TEXTURE_2D);
     return true;
+}
+
+/* Generic world alias integration: same IQM parser/skinner, no QuakeC change.
+ * Slot caching is per unique model path; cvars default OFF to protect release.
+ * Missing IQM falls straight back to the original MDL in R_DrawEntitiesOnList. */
+qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
+    if (xziel_iqm_viewmodels.value==0 || !e || !e->model)
+        return false;
+    return xiqm_draw_entity(e, e==&cl.viewent2 ? 1u : 0u);
+}
+qboolean Xziel_IQM_DrawWorldEntity(entity_t *e) {
+    static unsigned evict=2;
+    unsigned i, slot=XIQM_SLOT_COUNT;
+    if (xziel_iqm_entities.value==0 || !e || !e->model)
+        return false;
+    for (i=2;i<XIQM_SLOT_COUNT;i++) {
+        if (!strcmp(xiqm_slots[i].model,e->model->name)) {
+            slot=i;
+            break;
+        }
+        if (slot==XIQM_SLOT_COUNT && !xiqm_slots[i].model[0])
+            slot=i;
+    }
+    if (slot==XIQM_SLOT_COUNT) {
+        slot=evict++;
+        if(evict>=XIQM_SLOT_COUNT)evict=2;
+    }
+    return xiqm_draw_entity(e,slot);
 }
