@@ -63,6 +63,12 @@ jobs:
           python3 tools/quake_gltf/stage_real_mp40.py work/MP40-Moony_State.glb work/MP40-Real.iqm mp40-overlay | tee work/MP40.stage.json
           test -s mp40-overlay/models/weapons/mp40/v_mp40.iqm
           test -s mp40-overlay/licenses/MP40-MoonyState-CC-BY-4.0.txt
+      - name: C99 regression gate on ACTUAL unanimated 14,450-face MP40 IQM
+        run: |
+          set -euo pipefail
+          cc -std=c99 -Wall -Wextra -Werror -O2 -o work/test_iqm_skeleton tools/quake_gltf/test_iqm_animation.c -lm
+          work/test_iqm_skeleton work/MP40-Real.iqm | tee work/MP40.iqm-decoder.log
+          grep -q 'IQM_ANIMATION_DECODER_GREEN' work/MP40.iqm-decoder.log
       - name: Checkout pinned XZIEL Android builder
         run: |
           git clone --filter=blob:none https://github.com/1993velezpadilla-source/config-old-3.git xziel-builder
