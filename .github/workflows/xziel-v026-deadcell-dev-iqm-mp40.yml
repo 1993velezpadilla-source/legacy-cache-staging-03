@@ -191,8 +191,8 @@ jobs:
           app=Path("build/android-project/app")
           gradle=app/"build.gradle"
           s=gradle.read_text()
-          anchor='applicationId "com.xziel.deadcell.iqmdev"'
-          assert s.count(anchor)==1
+          anchor='applicationId "com.xziel.nzp"'
+          assert s.count(anchor)==1, "Unexpected v0.26 Android application ID"
           gradle.write_text(s.replace(anchor,'applicationId "com.xziel.deadcell.iqmdev"',1))
           strings=app/"src/main/res/values/strings.xml"
           s=strings.read_text()
