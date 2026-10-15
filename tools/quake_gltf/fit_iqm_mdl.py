@@ -9,6 +9,8 @@ import json
 import math
 import struct
 import sys
+import re
+import statistics
 from pathlib import Path
 
 def mdl_bbox(path):
@@ -34,7 +36,7 @@ def mdl_bbox(path):
     coords=[tuple(origin[i]+scale[i]*b[pos+4*k+i] for i in range(3)) for k in range(verts)]
     return [min(v[i] for v in coords) for i in range(3)], [max(v[i] for v in coords) for i in range(3)]
 
-def iqm_bbox(path):
+def iqm_positions(path):
     b=path.read_bytes()
     if len(b)<124 or b[:16]!=b"INTERQUAKEMODEL\0":
         raise ValueError("expected IQM2")
@@ -48,11 +50,61 @@ def iqm_bbox(path):
         if typ==0 and fmt==7 and width==3:
             if offset+count*12>len(b):raise ValueError("bad vertex data")
             coords=[struct.unpack_from("<3f",b,offset+j*12) for j in range(count)]
-            return [min(v[i] for v in coords) for i in range(3)], [max(v[i] for v in coords) for i in range(3)]
+            return coords
     raise ValueError("missing float POSITION")
 
-def write_alignment(mdl,iqm,dest):
-    amin,amax=mdl_bbox(mdl);bmin,bmax=iqm_bbox(iqm)
+def weapon_source_frames(path, weapon):
+    """Authoritative offsets/frame boundaries from NZ:P QuakeC, not COD guesses."""
+    src=path.read_text()
+    get_ads=re.search(r'vector GetWeaponADSOfs\s*\(float wep\)\s*=.*?(?=float\(float wep, float frametype)',src,re.S)
+    get_frames=re.search(r'float\(float wep, float frametype.*?GetFrame\s*=.*?(?=string\(float wep|float\(float wep)',src,re.S)
+    if not get_ads or not get_frames: raise ValueError("QuakeC ADS/frame functions absent")
+    def block(section):
+        # In each switch, share the fallthrough block with closely grouped weapon aliases.
+        matches=list(re.finditer(r'case\s+W_[A-Z0-9_]+\s*:',section))
+        target=next((i for i,m in enumerate(matches) if m.group().split()[1][:-1]==weapon),None)
+        if target is None: raise ValueError("Missing weapon "+weapon)
+        # Stop at next actual break, skipping grouped case labels.
+        tail=section[matches[target].start():]
+        end=tail.find("break;")
+        if end<0: raise ValueError("Unterminated weapon block "+weapon)
+        return tail[:end]
+    ads=block(get_ads.group())
+    numbers=re.search(r'return\s*\[\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\]',ads)
+    if not numbers:raise ValueError("ADS offsets not numeric for "+weapon)
+    # QuakeC: offset [0] = raw barrel lateral, [1] = vertical, [2] = forward.
+    raw=tuple(float(x) for x in numbers.groups())
+    ads_y=-raw[0]/1000.0
+    ads_z=raw[1]/1000.0
+    anim=block(get_frames.group())
+    def frame(label):
+        r=re.search(r'case\s+'+label+r'\s*:\s*return\s+(\d+)\s*;',anim)
+        if not r:raise ValueError("Missing "+label+" for "+weapon)
+        return int(r.group(1))
+    first,last=frame("RELOAD_START"),frame("RELOAD_END")
+    if not (0<ads_y<100 and -100<ads_z<100 and 1<=first<last<=255):
+        raise ValueError("Implausible QuakeC weapon parameters")
+    return ads_y,ads_z,first,last
+
+def sight_line(coords):
+    """Rear sight ROI: top of first receiver segment, excluding rear stock/front sight."""
+    xmin=min(v[0] for v in coords)
+    xmax=max(v[0] for v in coords)
+    span=xmax-xmin
+    region=[v for v in coords if xmin+0.28*span<=v[0]<=xmin+0.45*span]
+    if len(region)<50:raise ValueError("Insufficient geometry near rear receiver/sight")
+    zs=sorted(v[2] for v in region)
+    zcut=zs[int(0.97*(len(zs)-1))]
+    high=[v for v in region if v[2]>=zcut]
+    if len(high)<5:raise ValueError("Cannot infer rear sight from model")
+    return statistics.median(v[1] for v in high), statistics.median(v[2] for v in high)
+
+
+def write_alignment(mdl,iqm,dest,quakec=None,weapon=None):
+    amin,amax=mdl_bbox(mdl)
+    verts=iqm_positions(iqm)
+    bmin=[min(v[i] for v in verts) for i in range(3)]
+    bmax=[max(v[i] for v in verts) for i in range(3)]
     original=[amax[i]-amin[i] for i in range(3)]
     modern=[bmax[i]-bmin[i] for i in range(3)]
     if min(modern)<1e-6 or min(original)<1e-6:
@@ -68,15 +120,33 @@ def write_alignment(mdl,iqm,dest):
        (amin[1]+amax[1])/2-factor*(bmin[1]+bmax[1])/2,
        amin[2]-factor*bmin[2]
     ]
+    # One optional second line: authoritative ADS positional correction
+    # and original MDL reload-frame interval. Runtime uses e->origin[1]
+    # to blend only during ADS; idle transform remains unchanged.
+    metadata=None
+    if quakec is not None and weapon is not None:
+        amplitude,vertical,first,last=weapon_source_frames(quakec,weapon)
+        sight_y,sight_z=sight_line(verts)
+        delta_y=-amplitude-(offsets[1]+factor*sight_y)
+        delta_z=-vertical-(offsets[2]+factor*sight_z)
+        if not all(math.isfinite(v) for v in (delta_y,delta_z)):
+            raise ValueError("nonfinite ADS correction")
+        metadata=[amplitude,delta_y,delta_z,first,last]
     dest.parent.mkdir(parents=True,exist_ok=True)
-    dest.write_text(" ".join(f"{n:.9g}" for n in [factor]+offsets)+"\n")
+    lines=[" ".join(f"{n:.9g}" for n in [factor]+offsets)]
+    if metadata is not None:lines.append(" ".join(f"{n:.9g}" for n in metadata))
+    dest.write_text("\n".join(lines)+"\n")
     report={"original_mdl_min":amin,"original_mdl_max":amax,
             "iqm_min":bmin,"iqm_max":bmax,
-            "iqm_scale":factor,"xyz_offset":offsets,"source_vertex_decimation":False}
+            "iqm_scale":factor,"xyz_offset":offsets,"ads_metadata":metadata,
+            "sight_reference_from_geometry":sight_line(verts) if metadata else None,
+            "source_vertex_decimation":False}
     print(json.dumps(report,indent=2))
     return report
 
 if __name__=="__main__":
-    if len(sys.argv)!=4:
-        raise SystemExit("usage: fit_iqm_mdl.py <viewmodel.mdl> <viewmodel.iqm> <viewmodel.iqmfit>")
-    write_alignment(*map(Path,sys.argv[1:]))
+    if len(sys.argv) not in (4,6):
+        raise SystemExit("usage: fit_iqm_mdl.py <viewmodel.mdl> <viewmodel.iqm> <viewmodel.iqmfit> [<QuakeC/weapon_stats.qc> <W_WEAPON>]")
+    args=list(map(Path,sys.argv[1:4]))
+    if len(sys.argv)==6:args.extend([Path(sys.argv[4]),sys.argv[5]])
+    write_alignment(*args)
