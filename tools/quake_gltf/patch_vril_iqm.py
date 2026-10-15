@@ -71,6 +71,13 @@ def patch(root: Path):
     # Exactly one C file, no alteration of QuakeC, BSP or original MDL assets.
     model.write_text(model_updated)
     main.write_text(main_updated)
+    # Existing XZIEL Sanctum static-mesh patch used the wrong legacy GL_Bind symbol.
+    # The current Vril SDL backend uses Hyena_BindTexture, including on Android.
+    staticmesh = gl_dir / "gl_xziel_staticmesh.c"
+    if staticmesh.is_file():
+        static_body = staticmesh.read_text()
+        if "GL_Bind(b->texture);" in static_body:
+            staticmesh.write_text(static_body.replace("GL_Bind(b->texture);", "Hyena_BindTexture(b->texture);"))
     shutil.copy2(source, dest)
     for header_name in ("xiqm_matrix.h", "xiqm_animation.h"):
         shutil.copy2(source.with_name(header_name), gl_dir / header_name)
