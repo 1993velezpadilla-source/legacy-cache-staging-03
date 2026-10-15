@@ -63,6 +63,17 @@ jobs:
           python3 tools/quake_gltf/inspect_iqm.py work/MP40-Real.iqm --source-glb work/MP40-Moony_State.glb | tee work/MP40.parity.json
           python3 tools/quake_gltf/stage_real_mp40.py work/MP40-Moony_State.glb work/MP40-Real.iqm dead-cell-overlay | tee work/MP40.stage.json
           test -s dead-cell-overlay/models/weapons/mp40/v_mp40.iqm
+          test -s dead-cell-overlay/models/weapons/mp40/v_mp40.iqmparts
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          p=Path('dead-cell-overlay/models/weapons/mp40/v_mp40.iqmparts')
+          b=p.read_bytes()
+          assert b[:8]==b'XIQMPART'
+          assert struct.unpack_from('<I',b,8)[0]==14450
+          assert sum(x.bit_count() for x in b[12:])==348
+          print('SAME_HIGH_POLY_MP40_MAGAZINE_MASK_GREEN 348 source triangles')
+          PY
           test -s dead-cell-overlay/licenses/MP40-MoonyState-CC-BY-4.0.txt
       - name: C99 regression gate on ACTUAL unanimated 14,450-face MP40 IQM
         run: |
@@ -176,6 +187,9 @@ jobs:
               maps=sorted(n for n in names if n.startswith("nzp/maps/") and n.endswith(".bsp"))
               assert maps==["nzp/maps/xziel_proto.bsp"],maps
               assert "nzp/models/weapons/mp40/v_mp40.iqm" in names
+              mask=z.read("nzp/models/weapons/mp40/v_mp40.iqmparts")
+              assert mask[:8]==b'XIQMPART'
+              assert sum(x.bit_count() for x in mask[12:])==348
               assert "nzp/models/weapons/mp40/v_mp40.iqmfit" in names
               metadata=z.read("nzp/models/weapons/mp40/v_mp40.iqmfit").decode().split()
               assert len(metadata)==12,metadata
