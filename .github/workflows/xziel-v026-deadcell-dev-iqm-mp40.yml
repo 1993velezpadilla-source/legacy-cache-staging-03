@@ -287,7 +287,40 @@ jobs:
           "$ADB" logcat -c
           "$ADB" shell am start -W -n com.xziel.deadcell.iqmdev/org.libsdl.app.NZPActivity \
             --es xziel_ci_map xziel_proto | tee dist/launch.txt
-          sleep 40
+          # Source-equivalent ADS and reload are tested with the EXACT APK
+          # built in this workflow (no stale artifact from an earlier run).
+          READY_MODEL=0
+          for t in $(seq 1 48); do
+            if "$ADB" logcat -d -s XZIEL_IQM:I '*:S' 2>/dev/null | \
+              grep -q 'DRAWN model=models/weapons/mp40/v_mp40.mdl triangles=14450'; then
+              READY_MODEL=1; break
+            fi
+            sleep 1
+          done
+          test "$READY_MODEL" = 1
+          "$ADB" exec-out screencap -p > dist/00-deadcell-MP40-modern-idle.png
+          # Fire to create empty magazine space, tap original v0.26 reload.
+          "$ADB" shell input swipe 2124 632 2124 632 500
+          "$ADB" shell input tap 1932 848
+          sleep 0.28
+          "$ADB" exec-out screencap -p > dist/01-MP40-modern-magazine-extraction.png
+          sleep 0.65
+          "$ADB" exec-out screencap -p > dist/02-MP40-modern-magazine-reinsert.png
+          "$ADB" logcat -d -v threadtime > dist/modern-reload-logcat.txt
+          if ! grep -q 'XZIEL_IQM.*MODERN_MAGAZINE_COMPONENT.*faces=894' dist/modern-reload-logcat.txt; then
+            echo 'FAILED: full 894-face modern IQM magazine is NOT active'
+            exit 1
+          fi
+          if ! grep -q 'XZIEL_IQM.*RELOAD_SAME_HIGH_POLY_IQM.*movable_magazine_faces=894' dist/modern-reload-logcat.txt; then
+            echo 'FAILED: original QuakeC reload did NOT animate the same IQM weapon'
+            exit 1
+          fi
+          if grep -q 'RELOAD_LEGACY_ANIMATED_FALLBACK' dist/modern-reload-logcat.txt; then
+            echo 'FAILED: obsolete old-MDL reload renderer still active'
+            exit 1
+          fi
+          echo 'XZIEL_V026_SAME_MODERN_MP40_RELOAD_NO_MDL_SWAP_GREEN'
+          sleep 12
           "$ADB" exec-out screencap -p > dist/android-first-frame.png
           "$ADB" logcat -d -v threadtime > dist/logcat.txt
           "$ADB" shell run-as com.xziel.deadcell.iqmdev cat files/nzp-runtime/.xziel-stage \
