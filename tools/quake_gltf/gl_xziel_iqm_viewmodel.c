@@ -45,6 +45,7 @@ typedef struct {
     float ads_amplitude_y, ads_delta_y, ads_delta_z;
     float ads_front[3], ads_optical_y, ads_optical_z;
     int ads_front_valid, ads_optical_ready, ads_optical_locked, ads_optical_screen_reported;
+    int ads_fraction_logged, reload_ads_logged;
     int reload_first, reload_last, has_legacy_reload;
     xiqm_vertex *tri_vertices;
     xiqm_batch *batches;
@@ -104,6 +105,8 @@ static void xiqm_free(void) {
     xiqm.ads_optical_y=xiqm.ads_optical_z=0.0f;
     xiqm.ads_front_valid=xiqm.ads_optical_ready=xiqm.ads_optical_locked=0;
     xiqm.ads_optical_screen_reported=0;
+    xiqm.ads_fraction_logged=0;
+    xiqm.reload_ads_logged=0;
     xiqm.reload_first=xiqm.reload_last=xiqm.has_legacy_reload=0;
     xiqm.available = 0;
     xiqm.first_draw_logged = 0;
@@ -638,11 +641,26 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
                             xiqm.ads_front_valid);
             origin_samples++;
         }
+        if (ads_fraction>=0.90f && !xiqm.ads_fraction_logged) {
+            XIQM_ANDROID_LOG("ADS_SOURCE_HELD model=%s fraction=%.4f lateral=%.4f",
+                             xiqm.model,ads_fraction,Xziel_IQM_SourceADSOffsetLateral());
+            xiqm.ads_fraction_logged=1;
+        }
         if (ads_fraction<0.03f)ads_fraction=0.0f; /* avoid idle lateral bob */
         if (ads_fraction>1.0f)ads_fraction=1.0f;
         if (ads_fraction<0.0f)ads_fraction=0.0f;
         ads_shift_y=ads_fraction*xiqm.ads_delta_y;
         ads_shift_z=ads_fraction*xiqm.ads_delta_z;
+        /* Probe the EXACT same authoritative reload and ADS draw frame.
+         * Individual ADS and reload tests are insufficient: on mobile the
+         * reload gesture must not silently cancel first-person aim. */
+        if (reload_progress>=0.10f && reload_progress<=0.90f &&
+            ads_fraction>=0.60f && !xiqm.reload_ads_logged) {
+            XIQM_ANDROID_LOG("RELOAD_WHILE_ADS_HELD model=%s frame=%d reload_progress=%.3f ads_fraction=%.3f modern_faces=%u",
+                             xiqm.model,e->frame,reload_progress,
+                             ads_fraction,xiqm.triangles);
+            xiqm.reload_ads_logged=1;
+        }
     }
     glPushMatrix();
     /* The source Vril alias renderer calls R_RotateForEntity with DEFAULT

@@ -125,6 +125,11 @@ jobs:
           "$ADB" exec-out screencap -p > dist/02-reload-early-real.png
           sleep 0.9
           "$ADB" exec-out screencap -p > dist/03-reload-middle-real.png
+          # Prove the user's specific bug: RELOAD while ADS is physically
+          # held as a DIFFERENT simultaneous Android pointer, not after
+          # releasing ADS. The native QuakeC state is never bypassed.
+          python3 tools/quake_gltf/adb_emulator_multitouch.py --out dist \
+            2>&1 | tee dist/real-multitouch-input.txt
           "$ADB" logcat -d -v threadtime > dist/logcat.txt
           "$ADB" shell run-as com.xziel.deadcell.iqmdev cat files/nzp-runtime/.xziel-stage \
             > dist/stage.txt 2>/dev/null || true
@@ -141,6 +146,10 @@ jobs:
           grep -q 'XZIEL_IQM.*MODERN_MAGAZINE_COMPONENT model=models/weapons/mp40/v_mp40.mdl faces=894' dist/logcat.txt
           if ! grep -q 'XZIEL_IQM.*RELOAD_SAME_HIGH_POLY_IQM model=models/weapons/mp40/v_mp40.mdl.*movable_magazine_faces=894' dist/logcat.txt; then
              echo "RELOAD_SAME_MODEL_FAILED: the new modern MP40 reload was not observed"
+             exit 1
+          fi
+          if ! grep -q 'XZIEL_IQM.*RELOAD_WHILE_ADS_HELD model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
+             echo 'ADS_HOLD_RELOAD_NOT_OBSERVED: real multi-touch must remain first-person ADS while animating reload'
              exit 1
           fi
           if ! grep -q 'XZIEL_IQM.*ORIGINAL_HANDS_RELOAD_FRAMES_ADVANCE model=models/weapons/mp40/v_mp40_hands_only.mdl' dist/logcat.txt; then
@@ -183,6 +192,7 @@ jobs:
             dist/launch.txt
             dist/emulator.log
             dist/ads-input.txt
+            dist/real-multitouch-input.txt
             dist/apk-source.txt
             dist/apk.sha256
           if-no-files-found: warn
