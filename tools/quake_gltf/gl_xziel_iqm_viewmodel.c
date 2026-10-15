@@ -248,6 +248,37 @@ done:
     }
     return ok;
 }
+/* CPU skinning only in explicit preview mode until QuakeC clip mappings exist.
+ * We never change authoritative bullet/reload/ADS timing with test animation. */
+static void xiqm_update_pose(void) {
+    unsigned i,k;
+    int active=0;
+    if (xziel_iqm_preview_clip.value>=0 && xza.weighted &&
+        xziel_iqm_preview_clip.value<(float)xza.clips)
+        active=xza_eval(&xza,(unsigned)xziel_iqm_preview_clip.value,(float)cl.time);
+    for (i=0;i<xiqm.triangles*3u;i++) {
+        xiqm_vertex *v=&xiqm.tri_vertices[i];
+        unsigned sum=0;
+        float accum[3]={0,0,0};
+        if (active) {
+            for(k=0;k<4;k++)sum+=v->weights[k];
+            if(sum) {
+                for(k=0;k<4;k++) {
+                    float moved[3],factor;
+                    if(!v->weights[k])continue;
+                    xzm_point(&xza.skin[v->indices[k]],v->bind,moved);
+                    factor=(float)v->weights[k]/(float)sum;
+                    accum[0]+=moved[0]*factor;
+                    accum[1]+=moved[1]*factor;
+                    accum[2]+=moved[2]*factor;
+                }
+                memcpy(v->p,accum,sizeof(accum));
+                continue;
+            }
+        }
+        memcpy(v->p,v->bind,sizeof(v->bind));
+    }
+}
 qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
     unsigned i;
     if (xziel_iqm_viewmodels.value == 0 || !e || !e->model)
@@ -264,6 +295,7 @@ qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
     }
     if (!xiqm.available)
         return false;
+    xiqm_update_pose();
 
     glPushMatrix();
     R_RotateForEntity(e, e->scale);
