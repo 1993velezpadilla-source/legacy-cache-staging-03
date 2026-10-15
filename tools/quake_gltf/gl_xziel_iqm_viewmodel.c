@@ -121,6 +121,8 @@ static void xiqm_strncpy(char *dst, size_t capacity, const char *src) {
 }
 
 #include "xiqm_animation.h"
+/* Quake alias draw is implemented in gl_rmain.c; currententity is authoritative. */
+extern void R_DrawAliasModel(entity_t *e);
 static xzanim xza_slots[XIQM_SLOT_COUNT];
 static xzanim *xza_active=&xza_slots[0];
 #define xza (*xza_active)
