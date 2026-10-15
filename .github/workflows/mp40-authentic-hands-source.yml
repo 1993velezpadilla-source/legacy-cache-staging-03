@@ -53,8 +53,11 @@ jobs:
             --python tools/quake_gltf/blender_split_original_mp40_hands.py -- \
             "$MDL" /tmp/mp40-split/source-to-mdl.json \
             /tmp/mp40-split/v_mp40_hands_only.mdl dist/hand-mask-report.json \
+            /tmp/mp40-split/v_mp40.iqmpose \
             > dist/hands.log 2>&1 || { tail -n 110 dist/hands.log; exit 1; }
           grep -q MP40_AUTHENTIC_SOURCE_HANDS_46_FRAME_SPLIT_GREEN dist/hands.log
+          grep -q MP40_STOCK_GUN_RIGID_POSE_46_FRAME_GREEN dist/hands.log
+          test -s /tmp/mp40-split/v_mp40.iqmpose
           python3 - <<'PY'
           from pathlib import Path
           import json,struct
@@ -66,6 +69,12 @@ jobs:
           assert struct.unpack_from('<I',b,64)[0]==r['hands_polygons']
           assert r['removed_legacy_gun_polygons']>200
           assert r['all_46_source_pose_bytes_preserved']
+          assert r["modern_weapon_follows_original_stock_gun_pose"]
+          assert 25 < r["stock_gun_pose_max_rotation_degrees"] < 80
+          assert r["stock_gun_pose_worst_90pct_rigid_error"]<3
+          pose=Path("/tmp/mp40-split/v_mp40.iqmpose").read_bytes()
+          assert pose[:8]==b"XIQMPOSE" and struct.unpack_from("<I",pose,8)[0]==46
+          assert len(pose)==12+46*64
           assert r['runtime_renderer_enabled'] is False
           print('MP40_SOURCE_HANDS_REAL_46_FRAMES_VERIFIED_NONSHIPPING')
           PY

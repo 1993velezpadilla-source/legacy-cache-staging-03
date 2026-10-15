@@ -153,6 +153,12 @@ jobs:
              echo "RELOAD_SAME_MODEL_FAILED: the new modern MP40 reload was not observed"
              exit 1
           fi
+          if ! grep -q 'XZIEL_IQM.*ORIGINAL_GUN_POSE_46_SOURCE_FRAMES_LOADED' dist/logcat.txt; then
+             echo 'ORIGINAL_GUN_POSE_NOT_LOADED_ANDROID'; exit 1
+          fi
+          if ! grep -q 'XZIEL_IQM.*MODERN_MP40_STOCK_RELOAD_POSE_FOLLOW' dist/logcat.txt; then
+             echo 'HIGH_POLY_GUN_RELOAD_POSE_NOT_APPLIED_ANDROID'; exit 1
+          fi
           if ! grep -q 'XZIEL_IQM.*RELOAD_STARTED_FROM_ADS model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
              echo 'RELOAD_FROM_GENUINE_ADS_NOT_OBSERVED: not proven triggered during held input'
              exit 1

@@ -143,8 +143,11 @@ jobs:
           blender -b "$SRC" --python tools/quake_gltf/blender_split_original_mp40_hands.py -- \
             "$STOCK" work/mp40-source-registration.json \
             dead-cell-overlay/models/weapons/mp40/v_mp40_hands_only.mdl \
-            work/mp40-authentic-hands.json > work/hands-split.log 2>&1 || { tail -n 80 work/hands-split.log; exit 1; }
+            work/mp40-authentic-hands.json \
+            dead-cell-overlay/models/weapons/mp40/v_mp40.iqmpose > work/hands-split.log 2>&1 || { tail -n 80 work/hands-split.log; exit 1; }
           grep -q MP40_AUTHENTIC_SOURCE_HANDS_46_FRAME_SPLIT_GREEN work/hands-split.log
+          grep -q MP40_STOCK_GUN_RIGID_POSE_46_FRAME_GREEN work/hands-split.log
+          test -s dead-cell-overlay/models/weapons/mp40/v_mp40.iqmpose
           test -s dead-cell-overlay/models/weapons/mp40/v_mp40_hands_only.mdl
           python3 - <<'PY'
           import json
@@ -153,6 +156,9 @@ jobs:
           assert p["removed_legacy_gun_polygons"]>200
           assert p["all_46_source_pose_bytes_preserved"]
           assert p["skins_and_vertex_uvs_unchanged"]
+          assert p["modern_weapon_follows_original_stock_gun_pose"]
+          assert p["stock_gun_pose_max_rotation_degrees"]>25.0
+          assert p["stock_gun_pose_worst_90pct_rigid_error"]<3.0
           print("NZP_REAL_46_FRAME_HANDS_READY_FOR_MODERN_IQM_OVERLAY")
           PY
 
@@ -230,6 +236,12 @@ jobs:
               assert struct.unpack_from('<I',hands,64)[0]==hr["hands_polygons"]
               assert struct.unpack_from('<I',hands,68)[0]==46
               assert hr["removed_legacy_gun_polygons"]>200
+              # Reject APKs that install the moving original hands but
+              # leave the replacement gun frozen at a guessed pose.
+              pose=z.read("nzp/models/weapons/mp40/v_mp40.iqmpose")
+              assert pose[:8]==b"XIQMPOSE" and len(pose)==12+46*64
+              assert struct.unpack_from("<I",pose,8)[0]==46
+              assert hr["stock_gun_pose_max_rotation_degrees"]>25
               print("APKBUNDLE_ORIGINAL_ANIMATED_HANDS_WITHOUT_OLD_GUN_GREEN")
               mask=z.read("nzp/models/weapons/mp40/v_mp40.iqmparts")
               assert mask[:8]==b'XIQMPART'
@@ -358,6 +370,12 @@ jobs:
           if ! grep -q 'XZIEL_IQM.*RELOAD_SAME_HIGH_POLY_IQM.*movable_magazine_faces=894' dist/modern-reload-logcat.txt; then
             echo 'FAILED: original QuakeC reload did NOT animate the same IQM weapon'
             exit 1
+          fi
+          if ! grep -q 'XZIEL_IQM.*ORIGINAL_GUN_POSE_46_SOURCE_FRAMES_LOADED' dist/modern-reload-logcat.txt; then
+            echo 'MP40_GUN_POSE_SIDECAR_NOT_LOADED'; exit 1
+          fi
+          if ! grep -q 'XZIEL_IQM.*MODERN_MP40_STOCK_RELOAD_POSE_FOLLOW' dist/modern-reload-logcat.txt; then
+            echo 'MP40_MODERN_GUN_NOT_FOLLOWING_ORIGINAL_RELOAD_POSE'; exit 1
           fi
           if ! grep -q 'XZIEL_IQM.*ORIGINAL_HANDS_SAME_46_POSE model=models/weapons/mp40/v_mp40_hands_only.mdl' dist/modern-reload-logcat.txt; then
             echo 'FAILED: original 46-pose hands overlay not drawn with modern 14,450-face MP40'
