@@ -103,6 +103,19 @@ def sight_line(coords):
     return statistics.median(v[1] for v in high), statistics.median(v[2] for v in high)
 
 
+def front_sight(coords):
+    """High-Z geometry in last 10% of barrel: actual front sight model landmark."""
+    lo=min(v[0] for v in coords)
+    hi=max(v[0] for v in coords)
+    region=[v for v in coords if v[0] >= lo+0.90*(hi-lo)]
+    if len(region)<10:raise ValueError("Not enough front muzzle/sight geometry")
+    zs=sorted(v[2] for v in region)
+    floor=zs[int(0.98*(len(zs)-1))]
+    top=[v for v in region if v[2]>=floor]
+    if len(top)<3:raise ValueError("No front iron sight reference")
+    return [statistics.median(v[i] for v in top) for i in range(3)]
+
+
 def write_alignment(mdl,iqm,dest,quakec=None,weapon=None):
     amin,amax=mdl_bbox(mdl)
     verts=iqm_positions(iqm)
@@ -134,7 +147,7 @@ def write_alignment(mdl,iqm,dest,quakec=None,weapon=None):
         delta_z=-vertical-(offsets[2]+factor*sight_z)
         if not all(math.isfinite(v) for v in (delta_y,delta_z)):
             raise ValueError("nonfinite ADS correction")
-        metadata=[amplitude,delta_y,delta_z,first,last]
+        metadata=[amplitude,delta_y,delta_z,first,last]+front_sight(verts)
     dest.parent.mkdir(parents=True,exist_ok=True)
     lines=[" ".join(f"{n:.9g}" for n in [factor]+offsets)]
     if metadata is not None:lines.append(" ".join(f"{n:.9g}" for n in metadata))
@@ -143,6 +156,7 @@ def write_alignment(mdl,iqm,dest,quakec=None,weapon=None):
             "iqm_min":bmin,"iqm_max":bmax,
             "iqm_scale":factor,"xyz_offset":offsets,"ads_metadata":metadata,
             "sight_reference_from_geometry":sight_line(verts) if metadata else None,
+            "front_sight_reference_from_geometry":front_sight(verts) if metadata else None,
             "source_vertex_decimation":False}
     print(json.dumps(report,indent=2))
     return report
