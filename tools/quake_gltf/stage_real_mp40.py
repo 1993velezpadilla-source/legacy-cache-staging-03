@@ -13,6 +13,7 @@ from pathlib import Path
 from extract_basecolor import extract, _safe_name
 from inspect_iqm import parse_iqm, compare
 from preflight import parse_glb
+from prepare_reload_parts import generate as generate_reload_parts
 
 SOURCE_MD5="733d3ce5428a6451ec5231fa18e84058"
 MODEL_ID="7ec7e1f9656e4319b8edae0d785699ad"
@@ -56,13 +57,17 @@ def main(glb,iqm,overlay):
         print("MP40_IQM_MATERIAL_TEXTURE",mesh["material"],dst.name,dst.stat().st_size)
     out=target/"v_mp40.iqm"
     shutil.copyfile(iqm,out)
+    segmentation=generate_reload_parts(iqm,target/"v_mp40.iqmparts")
+    if segmentation["magazine_triangles"]!=348:
+        raise ValueError("MP40 magazine must remain a source-derived 348-triangle component")
     licensepath=Path(overlay)/"licenses/MP40-MoonyState-CC-BY-4.0.txt"
     licensepath.parent.mkdir(parents=True,exist_ok=True)
     licensepath.write_text(ATTRIBUTION)
     print(json.dumps({"MP40_GLB_SOURCE_TRIANGLES":source["triangles"],
         "MP40_IQM_TRIANGLES":p["converted"]["triangles"],
         "MP40_IQM_MESHES":len(iqm_meshes),"source_images":len(records),
-        "iqm":str(out),"license":str(licensepath)},indent=2))
+        "iqm":str(out),"magazine_mask":segmentation,
+        "license":str(licensepath)},indent=2))
 if __name__=="__main__":
     if len(sys.argv)!=4:
         raise SystemExit("usage: stage_real_mp40.py <source.glb> <converted.iqm> <overlay-root>")
