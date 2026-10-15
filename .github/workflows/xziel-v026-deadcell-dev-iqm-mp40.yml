@@ -319,6 +319,10 @@ jobs:
             echo 'FAILED: obsolete old-MDL reload renderer still active'
             exit 1
           fi
+          if ! grep -q 'XZIEL_IQM.*MAGAZINE_REAL_VERTEX_TRANSLATION model=models/weapons/mp40/v_mp40.mdl faces=894 vertices=2682' dist/modern-reload-logcat.txt; then
+            echo 'FAILED: reload started but no proof all 894 magazine triangles moved in the actual render buffer'
+            exit 1
+          fi
           echo 'XZIEL_V026_SAME_MODERN_MP40_RELOAD_NO_MDL_SWAP_GREEN'
           sleep 12
           "$ADB" exec-out screencap -p > dist/android-first-frame.png
