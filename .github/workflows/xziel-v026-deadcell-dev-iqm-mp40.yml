@@ -275,7 +275,11 @@ jobs:
               assert -13.0<actual_mid<-10.0,(actual_mid,fit_y)
               print("MP40_GUN_ONLY_LATERAL_ALIGNMENT_GREEN",actual_mid)
 
-              assert abs(float(metadata[5]))>1.0 and abs(float(metadata[6]))>0.1,metadata
+              # After using the actual original GUN bounding box, the ADS
+              # side correction must be SMALL (~0.45), not the prior -6.60
+              # that compensated for the hand-contaminated lateral fit.
+              assert 0.0 < abs(float(metadata[5])) < 1.0,metadata
+              assert abs(float(metadata[6]))>0.1,metadata
               assert [int(float(x)) for x in metadata[7:9]]==[4,31],metadata
               assert 0.50 < float(metadata[9]) < 0.59,metadata
               assert abs(float(metadata[10]))<0.03,metadata
