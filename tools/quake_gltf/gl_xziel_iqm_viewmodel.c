@@ -15,6 +15,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#ifdef __ANDROID__
+#include <android/log.h>
+#define XIQM_ANDROID_LOG(...) __android_log_print(ANDROID_LOG_INFO,"XZIEL_IQM",__VA_ARGS__)
+#else
+#define XIQM_ANDROID_LOG(...) ((void)0)
+#endif
 
 #define XIQM_MAX_BYTES (32u * 1024u * 1024u)
 #define XIQM_MAX_MESHES 256u
@@ -263,8 +269,10 @@ static int xiqm_load(const char *mdlpath) {
     xiqm.num_batches = mesh_count;
     xiqm.available = 1;
     ok = 1;
-    Con_Printf("XZIEL IQM: loaded %s meshes=%u triangles=%u vertices=%u (static stage)\n",
+    Con_Printf("XZIEL IQM: loaded %s meshes=%u triangles=%u vertices=%u\n",
                path, mesh_count, tri_count, vertex_count);
+    XIQM_ANDROID_LOG("LOADED %s meshes=%u triangles=%u vertices=%u fit_scale=%.3f",
+                     path, mesh_count, tri_count, vertex_count, xiqm.fit_scale);
 done:
     if (f) fclose(f);
     free(buf);
@@ -272,6 +280,7 @@ done:
     free(uv);
     if (!ok) {
         Con_Printf("XZIEL IQM: invalid %s, keeping original MDL\n", path);
+        XIQM_ANDROID_LOG("REJECTED %s, using original MDL",path);
         xiqm_free();
         xza_clear(&xza);
     }
