@@ -359,6 +359,12 @@ jobs:
             echo 'FAILED: original 46-pose hands overlay not drawn with modern 14,450-face MP40'
             exit 1
           fi
+          if ! grep -q 'XZIEL_IQM.*ORIGINAL_HANDS_RELOAD_FRAMES_ADVANCE model=models/weapons/mp40/v_mp40_hands_only.mdl' dist/modern-reload-logcat.txt; then
+            echo 'AUTHENTIC_HANDS_FRAME_ADVANCE_NOT_OBSERVED: still RED'
+            exit 1
+          fi
+          echo '===== LIVE ADS / HANDS / MAGAZINE OPTICAL DIAGNOSTIC ====='
+          grep -E 'XZIEL_IQM.*(ADS_ORIGIN|OPTICAL_|ORIGINAL_HANDS|MAGAZINE_REAL|RELOAD_SAME)' dist/modern-reload-logcat.txt | tail -n 80 || true
           if grep -q 'RELOAD_LEGACY_ANIMATED_FALLBACK' dist/modern-reload-logcat.txt; then
             echo 'FAILED: obsolete old-MDL reload renderer still active'
             exit 1
