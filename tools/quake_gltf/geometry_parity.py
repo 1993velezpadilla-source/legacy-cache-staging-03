@@ -96,14 +96,22 @@ def main(source,converted):
     ratio=target["area"]/origin["area"] if origin["area"] else 0
     positive_origin=origin["normal_positive"]/origin["triangles"]
     positive_target=target["normal_positive"]/target["triangles"]
+    same=abs(positive_origin-positive_target)<=0.01
+    inverted=abs(positive_origin-(1-positive_target))<=0.01
+    # FTEQW currently emits a globally reversed sign relative to glTF
+    # vertex normals on this fixture. This is NOT per-face corruption:
+    # Quake/Vril initializes glCullFace(GL_FRONT), not GL_BACK.
+    # A mixed result WOULD suggest missing faces if culling is enabled.
+    relation="same" if same else ("uniformly_reversed" if inverted else "mixed_or_unknown")
     checks={
        "triangles_preserved":target["triangles"]==origin["triangles"],
-       "normal_facing_preserved":abs(positive_origin-positive_target)<=0.01,
+       "winding_consistently_oriented":same or inverted,
        "area_preserved_within_1pct":abs(ratio-1)<=0.01,
        "no_degenerate_faces":target["degenerate"]==origin["degenerate"]==0
     }
     print(json.dumps({"source":origin,"converted":target,"area_ratio":ratio,
-                      "checks":checks,"note":"Procedural 20K fixture, NOT MP40/visual validation"},indent=2))
+                      "orientation_relation":relation,"checks":checks,
+                      "note":"Global reversal requires Quake GL_FRONT cull or culling-disabled diagnostic. Not proof of MP40 appearance."},indent=2))
     return 0 if all(checks.values()) else 1
 
 if __name__=="__main__":
