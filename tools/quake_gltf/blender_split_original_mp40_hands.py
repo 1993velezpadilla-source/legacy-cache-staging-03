@@ -22,9 +22,9 @@ from mathutils import Vector
 from mathutils.kdtree import KDTree
 
 args=sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else []
-if len(args)!=4:
-    raise SystemExit("USAGE original_mp40.mdl measured-transform.json hands_only.mdl report.json")
-source,fit_file,destination,report_file=map(lambda p:Path(p).resolve(),args)
+if len(args)!=5:
+    raise SystemExit("USAGE original_mp40.mdl measured-transform.json hands_only.mdl report.json gun_pose.iqmpose")
+source,fit_file,destination,report_file,pose_file=map(lambda p:Path(p).resolve(),args)
 raw=source.read_bytes()
 if len(raw)<84 or raw[:4]!=b"IDPO" or struct.unpack_from("<I",raw,4)[0]!=6:
     raise RuntimeError("NZP_HANDS_RED not original MDL v6")
@@ -180,5 +180,82 @@ report={
  "skins_and_vertex_uvs_unchanged":True,
  "runtime_renderer_enabled":False,"visual_fidelity_verified":False}
 report_file.parent.mkdir(parents=True,exist_ok=True)
+# The extracted authentic hands use the ORIGINAL 46 stock poses.
+# The modern replacement MP40 initially stayed fixed, apart from a made-up
+# 11-degree pitch. Stock MP40 gun vertices REALLY rotate ~35 degrees during
+# reload and translate ~17 Quake units. This is why the old hand animation
+# appeared to float around the new stationary weapon on real Pixel Fold.
+#
+# Derive each stock gun's authoritative rigid root pose *from the 421 gun
+# polygons REMOVED from the hands-only overlay*, not from guessed keyframes.
+# All input MDL frame bytes remain unchanged. Fit transform X@R+t to
+# reference frame 0 => source QuakeC frame. Ignore the independently moving
+# old magazine outliers with a robust Kabsch fit.
+gun_vertices=sorted(set(idx for tri in rejected for idx in faces[tri][1:])-
+                    set(hand_vertex_ids))
+if len(gun_vertices)<300:
+    raise RuntimeError("NZP_GUN_POSE_RED too few isolated original gun vertices")
+def dequantized(frame):
+    packed=np.frombuffer(frame,dtype=np.uint8,count=nv*4,offset=28)
+    return packed.reshape((nv,4))[:,:3].astype(np.float64)*scale+origin
+ref=dequantized(frames[0])[gun_vertices]
+def solve_pose(reference,target):
+    active=np.arange(len(reference))
+    for loop in range(4):
+        X=reference[active];Y=target[active]
+        xc=X.mean(axis=0);yc=Y.mean(axis=0)
+        u,_,vt=np.linalg.svd((X-xc).T@(Y-yc),full_matrices=True)
+        correction=np.diag([1.,1.,np.linalg.det(u@vt)])
+        R=u@correction@vt
+        translation=yc-xc@R
+        residual=np.linalg.norm(reference@R+translation-target,axis=1)
+        cutoff=max(0.4,float(np.quantile(residual,0.55))*2.5)
+        next_active=np.where(residual<=cutoff)[0]
+        if len(next_active)<len(reference)*0.70:
+            break
+        if np.array_equal(active,next_active):
+            break
+        active=next_active
+    return R,translation,residual
+records=[]
+pose_blocks=[]
+for frame_i,frame_bytes in enumerate(frames):
+    target=dequantized(frame_bytes)[gun_vertices]
+    R,t,err=solve_pose(ref,target)
+    # OpenGL expects column-major matrices. The Kabsch row-vector map
+    # X@R+t becomes column-vector R.T@X + t. Flatten in Fortran order.
+    matrix=np.eye(4,dtype=np.float64)
+    matrix[:3,:3]=R.T
+    matrix[:3,3]=t
+    flattened=matrix.flatten(order="F").tolist()
+    pose_blocks.append(struct.pack("<16f",*flattened))
+    degrees=math.degrees(math.acos(float(np.clip((np.trace(R)-1)/2,-1,1))))
+    records.append({"frame":frame_i,"rotation_degrees":degrees,
+                    "translation":list(map(float,t)),
+                    "p90_rigid_error":float(np.quantile(err,.9)),
+                    "median_rigid_error":float(np.median(err))})
+peak_angle=max(x["rotation_degrees"] for x in records[4:32])
+peak_distance=max(float(np.linalg.norm(x["translation"])) for x in records[4:32])
+worst_p90=max(x["p90_rigid_error"] for x in records[4:32])
+if not (25.0<peak_angle<80.0 and 8.0<peak_distance<65.0 and worst_p90<3.0):
+    raise RuntimeError("NZP_GUN_POSE_RED unexpected original gun trajectory "+
+                       repr((peak_angle,peak_distance,worst_p90)))
+if not np.allclose(np.frombuffer(pose_blocks[0],dtype="<f4").reshape(4,4,order="F"),
+                   np.eye(4),atol=.0001):
+    raise RuntimeError("NZP_GUN_POSE_RED first frame should be identity")
+pose_blob=b"XIQMPOSE"+struct.pack("<I",nframes)+b"".join(pose_blocks)
+assert len(pose_blob)==12+nframes*64
+pose_file.parent.mkdir(parents=True,exist_ok=True)
+pose_file.write_bytes(pose_blob)
+report["modern_weapon_follows_original_stock_gun_pose"]=True
+report["stock_gun_pose_reference_frame"]=0
+report["stock_gun_pose_max_rotation_degrees"]=peak_angle
+report["stock_gun_pose_max_translation_quake_units"]=peak_distance
+report["stock_gun_pose_worst_90pct_rigid_error"]=worst_p90
+report["stock_gun_pose_sidecar_sha256"]=hashlib.sha256(pose_blob).hexdigest()
+report["stock_gun_pose_sidecar_bytes"]=len(pose_blob)
+report["source_gun_pose_validation_only_not_android_visual_certified"]=True
 report_file.write_text(json.dumps(report,indent=2))
 print("MP40_AUTHENTIC_SOURCE_HANDS_46_FRAME_SPLIT_GREEN",json.dumps(report))
+print("MP40_STOCK_GUN_RIGID_POSE_46_FRAME_GREEN",
+      peak_angle,peak_distance,worst_p90,len(pose_blob))
