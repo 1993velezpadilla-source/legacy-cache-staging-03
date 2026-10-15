@@ -48,6 +48,8 @@ typedef struct {
     int reload_first, reload_last, has_legacy_reload;
     xiqm_vertex *tri_vertices;
     xiqm_batch *batches;
+    unsigned char *magazine_bits;
+    unsigned magazine_faces;
 } xiqm_state;
 
 #define XIQM_SLOT_COUNT 24u
@@ -81,6 +83,9 @@ static int xiqm_span(size_t length, uint32_t start, uint32_t count, uint32_t str
 static void xiqm_free(void) {
     free(xiqm.tri_vertices);
     free(xiqm.batches);
+    free(xiqm.magazine_bits);
+    xiqm.magazine_bits=NULL;
+    xiqm.magazine_faces=0;
     xiqm.tri_vertices = NULL;
     xiqm.batches = NULL;
     xiqm.triangles = 0;
@@ -121,6 +126,46 @@ static void xiqm_fragment(char *dst, size_t capacity, const char *src) {
         dst[j++] = (isalnum(c) || c == '_' || c == '-' || c == '.') ? c : '_';
     }
     dst[j] = 0;
+}
+/* Optional model-specific detachable magazine: a packed bitset generated
+ * from real IQM triangle connectivity, NEVER a swap to the old MDL.
+ * Other weapons without this sidecar retain their complete modern IQM mesh. */
+static void xiqm_load_moving_magazine(const char *mdlpath) {
+    char path[160];
+    FILE *f=NULL;
+    unsigned bytes,seen=0,i;
+    unsigned char *raw;
+    int n;
+    size_t len=strlen(mdlpath);
+    if (len<5 || len+12>=sizeof(path) || !xiqm.has_legacy_reload)
+        return;
+    snprintf(path,sizeof(path),"%.*s.iqmparts",(int)(len-4),mdlpath);
+    n=COM_FOpenFile(path,&f);
+    bytes=(xiqm.triangles+7u)/8u;
+    if (!f || n != (int)(bytes+12u)) {
+        if(f)fclose(f);
+        XIQM_ANDROID_LOG("MOVING_MAGAZINE_NO_MASK model=%s file=%s",mdlpath,path);
+        return;
+    }
+    raw=(unsigned char *)malloc((size_t)n);
+    if (!raw) { fclose(f);return; }
+    if (fread(raw,1,(size_t)n,f)!=(size_t)n ||
+        memcmp(raw,"XIQMPART",8) || xiqm_u32(raw+8)!=xiqm.triangles) {
+        free(raw);fclose(f);return;
+    }
+    fclose(f);
+    for(i=0;i<xiqm.triangles;i++)
+        if(raw[12+i/8u] & (1u << (i%8u)))seen++;
+    if (seen==0 || seen>xiqm.triangles/5u) {
+        free(raw);return;
+    }
+    xiqm.magazine_bits=(unsigned char *)malloc(bytes);
+    if (!xiqm.magazine_bits){ free(raw);return; }
+    memcpy(xiqm.magazine_bits,raw+12,bytes);
+    xiqm.magazine_faces=seen;
+    free(raw);
+    XIQM_ANDROID_LOG("MODERN_MAGAZINE_COMPONENT model=%s faces=%u weapon_faces=%u",
+                    mdlpath,seen,xiqm.triangles);
 }
 static int xiqm_load(const char *mdlpath) {
     char path[128], folder[128];
@@ -307,6 +352,7 @@ static int xiqm_load(const char *mdlpath) {
     }
     xiqm.triangles = tri_count;
     xiqm.num_batches = mesh_count;
+    xiqm_load_moving_magazine(mdlpath);
     xiqm.available = 1;
     ok = 1;
     Con_Printf("XZIEL IQM: loaded %s meshes=%u triangles=%u vertices=%u\n",
@@ -326,9 +372,31 @@ done:
     }
     return ok;
 }
-/* CPU skinning only in explicit preview mode until QuakeC clip mappings exist.
- * We never change authoritative bullet/reload/ADS timing with test animation. */
-static void xiqm_update_pose(void) {
+/* Frame-accurate trigger comes from the original server-authoritative
+ * MDL frame range; the new procedural choreography is an EXPERIMENTAL visual
+ * stand-in until the same high-poly weapon receives genuine rigged clips.
+ * No old mesh is used, no animation timing/gameplay state is changed. */
+static float xiqm_reload_progress(int frame) {
+    if (!xiqm.has_legacy_reload || frame<xiqm.reload_first ||
+        frame>xiqm.reload_last) return -1.0f;
+    return (float)(frame-xiqm.reload_first)/
+           (float)(xiqm.reload_last-xiqm.reload_first);
+}
+static float xiqm_smooth(float x) {
+    if(x<0.0f)x=0.0f;
+    if(x>1.0f)x=1.0f;
+    return x*x*(3.0f-2.0f*x);
+}
+static float xiqm_magazine_motion(float progress) {
+    if (progress<0.0f || !xiqm.magazine_bits) return 0.0f;
+    /* Magazine release -> extract -> hold -> seat. This does not pretend
+     * to be frame-for-frame BO3 animation. All frames are from original QC. */
+    if (progress<0.28f) return xiqm_smooth(progress/0.28f);
+    if (progress<0.62f) return 1.0f;
+    if (progress<0.91f) return 1.0f-xiqm_smooth((progress-0.62f)/0.29f);
+    return 0.0f;
+}
+static void xiqm_update_pose(float magazine_movement) {
     unsigned i,k;
     int active=0;
     if (xziel_iqm_preview_clip.value>=0 && xza.weighted &&
@@ -351,10 +419,15 @@ static void xiqm_update_pose(void) {
                     accum[2]+=moved[2]*factor;
                 }
                 memcpy(v->p,accum,sizeof(accum));
-                continue;
-            }
+            } else memcpy(v->p,v->bind,sizeof(v->bind));
+        } else memcpy(v->p,v->bind,sizeof(v->bind));
+        if (magazine_movement>0.0f && xiqm.magazine_bits &&
+            (xiqm.magazine_bits[(i/3u)/8u] & (1u << ((i/3u)%8u)))) {
+            /* Real magazine triangles from THIS 14,450-face high-poly IQM.
+             * Keep geometry, base-color UVs, material and normals intact. */
+            v->p[0]+=0.010f*magazine_movement;
+            v->p[2]-=0.135f*magazine_movement;
         }
-        memcpy(v->p,v->bind,sizeof(v->bind));
     }
 }
 /* Fixed-function optical calibration: align the real front iron sight to
@@ -423,6 +496,7 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     GLboolean depth_was_enabled, blend_was_enabled, cull_was_enabled, texture_was_enabled;
     unsigned textured_batches=0;
     float ads_fraction=0.0f, ads_shift_y=0.0f, ads_shift_z=0.0f;
+    float reload_progress=-1.0f;
     if (!e || !e->model || i>=XIQM_SLOT_COUNT)
         return false;
     xiqm_active=&xiqm_slots[i];
@@ -435,25 +509,24 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     }
     if (!xiqm.available)
         return false;
-    /* A static GLB has ZERO reload clips. Instead of presenting a frozen
-     * magazine, let the actual animated Quake MDL draw during its
-     * authoritative QuakeC reload frames. This is a temporary fidelity
-     * fallback, not an invented animation of the high-poly mesh. */
-    if (i<2 && xiqm.has_legacy_reload &&
-        e->frame >= xiqm.reload_first && e->frame <= xiqm.reload_last) {
-        static int reload_once=0;
-        if (!reload_once) {
-            XIQM_ANDROID_LOG("RELOAD_LEGACY_ANIMATED_FALLBACK model=%s frame=%d",xiqm.model,e->frame);
-            reload_once=1;
+    /* No visual switch to MDL: the same IQM always draws while equipped.
+     * Legacy weapon frame values are used only to time the new mesh pose. */
+    {
+        static int logged=0;
+        float progress=(i<2)?xiqm_reload_progress(e->frame):-1.0f;
+        if (progress>=0.0f && !logged) {
+            XIQM_ANDROID_LOG("RELOAD_SAME_HIGH_POLY_IQM model=%s frame=%d movable_magazine_faces=%u",
+                            xiqm.model,e->frame,xiqm.magazine_faces);
+            logged=1;
         }
-        return false;
+        xiqm_update_pose(xiqm_magazine_motion(progress));
     }
-    xiqm_update_pose();
 
     depth_was_enabled=glIsEnabled(GL_DEPTH_TEST);
     blend_was_enabled=glIsEnabled(GL_BLEND);
     cull_was_enabled=glIsEnabled(GL_CULL_FACE);
     texture_was_enabled=glIsEnabled(GL_TEXTURE_2D);
+    if (i<2)reload_progress=xiqm_reload_progress(e->frame);
     /* e->origin[1] is interpolated live by authoritative CSQC
      * ViewModel_GetADSPosition; no parallel ADS clock is introduced. */
     if (i<2 && xiqm.ads_amplitude_y>1.0f) {
@@ -473,6 +546,8 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     }
     glPushMatrix();
     R_RotateForEntity(e, e->scale);
+    if (reload_progress>=0.0f)
+        glRotatef(11.0f*sinf(reload_progress*3.14159265f),1.0f,0.0f,0.0f);
     glTranslatef(xiqm.fit_pos[0],xiqm.fit_pos[1]+ads_shift_y,xiqm.fit_pos[2]+ads_shift_z);
     glScalef(xiqm.fit_scale,xiqm.fit_scale,xiqm.fit_scale);
     if(i<2 && xiqm.ads_amplitude_y>1.0f)
