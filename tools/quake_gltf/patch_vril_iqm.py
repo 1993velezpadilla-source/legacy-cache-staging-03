@@ -49,7 +49,8 @@ def patch(root: Path):
         main_body,
         '#include "../../../nzportable_def.h"\n',
         '#include "../../../nzportable_def.h"\n\n'
-        'qboolean Xziel_IQM_DrawViewModel(entity_t *e);\n',
+        'qboolean Xziel_IQM_DrawViewModel(entity_t *e);\n'
+        'qboolean Xziel_IQM_DrawWorldEntity(entity_t *e);\n',
         "Renderer declaration"
     )
 
@@ -66,6 +67,21 @@ def patch(root: Path):
         replacement = "\tif (!Xziel_IQM_DrawViewModel(currententity))\n\t\tR_DrawAliasModel (currententity);\n"
         section = replace_once(section, marker, replacement, name)
         main_updated = main_updated[:begin] + section + main_updated[end:]
+
+    # World alias models (zombies, props, third-person weapons) also
+    # get opt-in IQM sidecars, never replacing missing model fallbacks.
+    world_start = main_updated.find("void R_DrawEntitiesOnList (void)")
+    world_end = main_updated.find("void R_DrawView2Model (void)", world_start)
+    if world_start < 0 or world_end < 0:
+        raise RuntimeError("Missing entity-list draw section")
+    world_body = main_updated[world_start:world_end]
+    legacy_draw = "\t\t\tR_DrawAliasModel (currententity);\n"
+    world_draw = (
+        "\t\t\tif (!Xziel_IQM_DrawWorldEntity(currententity))\n"
+        "\t\t\t\tR_DrawAliasModel (currententity);\n"
+    )
+    world_body = replace_once(world_body, legacy_draw, world_draw, "world alias model")
+    main_updated = main_updated[:world_start] + world_body + main_updated[world_end:]
 
     dest = gl_dir / source.name
     # Exactly one C file, no alteration of QuakeC, BSP or original MDL assets.
