@@ -33,7 +33,7 @@ jobs:
           set -euo pipefail
           SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
           "$SDKMANAGER" "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
-      - name: Press official controls: ADS held, fire and reload, capture real screenshots
+      - name: 'Press official controls: ADS held, fire and reload, capture real screenshots'
         shell: bash
         run: |
           set -euo pipefail
