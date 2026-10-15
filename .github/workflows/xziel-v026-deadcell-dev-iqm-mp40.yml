@@ -122,6 +122,36 @@ jobs:
           cp /tmp/xziel-proto-map-compile.log proto-dist/
           ls -lh proto-dist/
 
+      - name: Extract original 46-pose NZP hands ONLY from the authentic Blender source
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y -qq blender python3-numpy libegl1 libgl1
+          SRC=/tmp/nzp-assets/source/models/weapons/mp40/v_mp40/mesh.blend
+          STOCK=/tmp/nzp-assets/common/models/weapons/mp40/v_mp40.mdl
+          test -s "$SRC" && test -s "$STOCK"
+          git -C xziel-builder fetch --depth 1 origin cbbf5669f2e9feb0f763dd21b6069347fe9fde4f
+          git -C xziel-builder show cbbf5669f2e9feb0f763dd21b6069347fe9fde4f:tools/mp40_bridge/blender_stock_model_icp.py > work/measure_original_mp40.py
+          blender -b "$SRC" --python work/measure_original_mp40.py -- "$STOCK" \
+            work/mp40-source-registration.json > work/hands-fit.log 2>&1 || { tail -n 60 work/hands-fit.log; exit 1; }
+          mkdir -p dead-cell-overlay/models/weapons/mp40
+          blender -b "$SRC" --python tools/quake_gltf/blender_split_original_mp40_hands.py -- \
+            "$STOCK" work/mp40-source-registration.json \
+            dead-cell-overlay/models/weapons/mp40/v_mp40_hands_only.mdl \
+            work/mp40-authentic-hands.json > work/hands-split.log 2>&1 || { tail -n 80 work/hands-split.log; exit 1; }
+          grep -q MP40_AUTHENTIC_SOURCE_HANDS_46_FRAME_SPLIT_GREEN work/hands-split.log
+          test -s dead-cell-overlay/models/weapons/mp40/v_mp40_hands_only.mdl
+          python3 - <<'PY'
+          import json
+          p=json.load(open("work/mp40-authentic-hands.json"))
+          assert p["source_animated_frames"]==46 and p["hands_polygons"]>120
+          assert p["removed_legacy_gun_polygons"]>200
+          assert p["all_46_source_pose_bytes_preserved"]
+          assert p["skins_and_vertex_uvs_unchanged"]
+          print("NZP_REAL_46_FRAME_HANDS_READY_FOR_MODERN_IQM_OVERLAY")
+          PY
+
       - name: Add Dead Cell custom-map display name only
         shell: bash
         run: |
@@ -146,7 +176,7 @@ jobs:
           anchor='python3 "$ROOT/scripts/patch_vril_official_touch_skins_v026.py" "$DEPS/vril"'
           assert text.count(anchor)==1, 'Unsupported XZIEL builder revision'
           text=text.replace(anchor,anchor+'\npython3 "$XZIEL_IQM_TOOLS/patch_vril_iqm.py" "$DEPS/vril"'
-                                   +'\npython3 "$XZIEL_IQM_TOOLS/enable_mp40_preview_vril.py" "$DEPS/vril"')
+                                   +'\npython3 "$XZIEL_IQM_TOOLS/enable_mp40_preview_vril.py" "$DEPS/vril" --hands-only')
           qa='python3 "$ROOT/scripts/patch_xziel_v026_devmenu.py" "$DEPS"\nfi'
           assert text.count(qa)==1, 'Cannot locate post-v026 developer menu QuakeC patch position'
           text=text.replace(qa, qa+'\npython3 "$XZIEL_IQM_TOOLS/patch_mp40_smoke_quakec.py" "$DEPS/quakec"')
@@ -187,6 +217,16 @@ jobs:
               maps=sorted(n for n in names if n.startswith("nzp/maps/") and n.endswith(".bsp"))
               assert maps==["nzp/maps/xziel_proto.bsp"],maps
               assert "nzp/models/weapons/mp40/v_mp40.iqm" in names
+              import json, hashlib, struct
+              hands=z.read("nzp/models/weapons/mp40/v_mp40_hands_only.mdl")
+              source_mdl=z.read("nzp/models/weapons/mp40/v_mp40.mdl")
+              hr=json.load(open("../work/mp40-authentic-hands.json"))
+              assert hashlib.sha256(source_mdl).hexdigest()==hr["input_sha256"], "Hands source differs from v0.26 actual stock MDL"
+              assert hands[:4]==b'IDPO' and len(hands)>84
+              assert struct.unpack_from('<I',hands,64)[0]==hr["hands_polygons"]
+              assert struct.unpack_from('<I',hands,68)[0]==46
+              assert hr["removed_legacy_gun_polygons"]>200
+              print("APKBUNDLE_ORIGINAL_ANIMATED_HANDS_WITHOUT_OLD_GUN_GREEN")
               mask=z.read("nzp/models/weapons/mp40/v_mp40.iqmparts")
               assert mask[:8]==b'XIQMPART'
               assert sum(x.bit_count() for x in mask[12:])==894
@@ -313,6 +353,10 @@ jobs:
           fi
           if ! grep -q 'XZIEL_IQM.*RELOAD_SAME_HIGH_POLY_IQM.*movable_magazine_faces=894' dist/modern-reload-logcat.txt; then
             echo 'FAILED: original QuakeC reload did NOT animate the same IQM weapon'
+            exit 1
+          fi
+          if ! grep -q 'XZIEL_IQM.*ORIGINAL_HANDS_SAME_46_POSE model=models/weapons/mp40/v_mp40_hands_only.mdl' dist/modern-reload-logcat.txt; then
+            echo 'FAILED: original 46-pose hands overlay not drawn with modern 14,450-face MP40'
             exit 1
           fi
           if grep -q 'RELOAD_LEGACY_ANIMATED_FALLBACK' dist/modern-reload-logcat.txt; then
