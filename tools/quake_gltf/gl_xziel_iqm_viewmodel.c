@@ -38,7 +38,7 @@ typedef struct {
 } xiqm_batch;
 typedef struct {
     char model[MAX_QPATH];
-    int available;
+    int available, first_draw_logged;
     unsigned triangles, num_batches;
     float fit_scale, fit_pos[3];
     xiqm_vertex *tri_vertices;
@@ -83,6 +83,7 @@ static void xiqm_free(void) {
     xiqm.fit_scale = 1.0f;
     xiqm.fit_pos[0]=xiqm.fit_pos[1]=xiqm.fit_pos[2]=0.0f;
     xiqm.available = 0;
+    xiqm.first_draw_logged = 0;
 }
 static const char *xiqm_name(const unsigned char *text, unsigned length, unsigned idx) {
     if (idx >= length || !memchr(text + idx, 0, length - idx))
@@ -320,6 +321,7 @@ static void xiqm_update_pose(void) {
 }
 static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     GLboolean depth_was_enabled, blend_was_enabled, cull_was_enabled, texture_was_enabled;
+    unsigned textured_batches=0;
     if (!e || !e->model || i>=XIQM_SLOT_COUNT)
         return false;
     xiqm_active=&xiqm_slots[i];
@@ -363,16 +365,22 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
                 prefix[folder_len] = 0;
                 snprintf(texname, sizeof(texname), "%s%s", prefix, b->material);
                 b->texture = Image_LoadImage(texname, IMAGE_PNG | IMAGE_TGA | IMAGE_JPG, 0, true, true);
+                XIQM_ANDROID_LOG("TEXTURE model=%s material=%s path=%s id=%d",xiqm.model,b->material,texname,b->texture);
             }
             if (b->texture < 0) b->texture = -2; /* retry never until model changes */
         }
         if (b->texture >= 0) {
             glEnable(GL_TEXTURE_2D);
             Hyena_BindTexture(b->texture);
+            textured_batches++;
         } else {
             glDisable(GL_TEXTURE_2D);
         }
         glDrawArrays(GL_TRIANGLES, (GLint)b->start, (GLsizei)b->count);
+    }
+    if (!xiqm.first_draw_logged) {
+        XIQM_ANDROID_LOG("DRAWN model=%s triangles=%u textured_batches=%u",xiqm.model,xiqm.triangles,textured_batches);
+        xiqm.first_draw_logged=1;
     }
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
     glDisableClientState(GL_VERTEX_ARRAY);
