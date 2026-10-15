@@ -257,8 +257,6 @@ jobs:
               # lateral-unit span of displaced reload hands, causing the
               # replacement gun to hover separately (visible on real phone).
               # The actual original MP40 gun's Y centroid is ~ -11.47.
-              import numpy as np
-              from io import BytesIO
               modelbytes=z.read("nzp/models/weapons/mp40/v_mp40.iqm")
               vcount=struct.unpack_from("<I",modelbytes,48)[0]
               desc_count=struct.unpack_from("<I",modelbytes,44)[0]
@@ -267,11 +265,11 @@ jobs:
               for t in range(desc_count):
                   kind,flags,fmt,width,ofs=struct.unpack_from("<5I",modelbytes,desc_start+t*20)
                   if kind==0 and fmt==7 and width==3:
-                      gun_y=np.frombuffer(modelbytes,dtype="<f4",count=vcount*3,
-                                          offset=ofs).reshape((-1,3))[:,1]
+                      ys=struct.unpack_from("<"+("fff"*vcount),modelbytes,ofs)
+                      gun_y=(min(ys[1::3]),max(ys[1::3]))
               assert gun_y is not None
               fit_scale=float(metadata[0]);fit_y=float(metadata[2])
-              actual_mid=fit_y+fit_scale*(float(gun_y.min())+float(gun_y.max()))/2
+              actual_mid=fit_y+fit_scale*(gun_y[0]+gun_y[1])/2
               # These source constraints are from the ORIGINAL source MDL
               # metal vertices, not a guessed artist placement.
               assert -13.0<actual_mid<-10.0,(actual_mid,fit_y)
