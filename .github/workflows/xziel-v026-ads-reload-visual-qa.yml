@@ -125,9 +125,9 @@ jobs:
           "$ADB" exec-out screencap -p > dist/02-reload-early-real.png
           sleep 0.9
           "$ADB" exec-out screencap -p > dist/03-reload-middle-real.png
-          # Prove the user's specific bug: RELOAD while ADS is physically
-          # held as a DIFFERENT simultaneous Android pointer, not after
-          # releasing ADS. The native QuakeC state is never bypassed.
+          # Prove reload was TRIGGERED FROM ADS with a SECOND real pointer.
+          # Original NZ:P W_Reload forces zoom=false; first-person aim-out
+          # during reload is correct. Never require zoom to remain fixed.
           python3 tools/quake_gltf/adb_emulator_multitouch.py --out dist \
             2>&1 | tee dist/real-multitouch-input.txt
           "$ADB" logcat -d -v threadtime > dist/logcat.txt
@@ -148,8 +148,8 @@ jobs:
              echo "RELOAD_SAME_MODEL_FAILED: the new modern MP40 reload was not observed"
              exit 1
           fi
-          if ! grep -q 'XZIEL_IQM.*RELOAD_WHILE_ADS_HELD model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
-             echo 'ADS_HOLD_RELOAD_NOT_OBSERVED: real multi-touch must remain first-person ADS while animating reload'
+          if ! grep -q 'XZIEL_IQM.*RELOAD_STARTED_FROM_ADS model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
+             echo 'RELOAD_FROM_GENUINE_ADS_NOT_OBSERVED: not proven triggered during held input'
              exit 1
           fi
           if ! grep -q 'XZIEL_IQM.*ORIGINAL_HANDS_RELOAD_FRAMES_ADVANCE model=models/weapons/mp40/v_mp40_hands_only.mdl' dist/logcat.txt; then

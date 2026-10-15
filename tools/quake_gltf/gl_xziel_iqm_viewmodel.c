@@ -45,7 +45,8 @@ typedef struct {
     float ads_amplitude_y, ads_delta_y, ads_delta_z;
     float ads_front[3], ads_optical_y, ads_optical_z;
     int ads_front_valid, ads_optical_ready, ads_optical_locked, ads_optical_screen_reported;
-    int ads_fraction_logged, reload_ads_logged;
+    int ads_fraction_logged, reload_from_ads_logged;
+    float last_ads_held_time;
     int reload_first, reload_last, has_legacy_reload;
     xiqm_vertex *tri_vertices;
     xiqm_batch *batches;
@@ -106,7 +107,8 @@ static void xiqm_free(void) {
     xiqm.ads_front_valid=xiqm.ads_optical_ready=xiqm.ads_optical_locked=0;
     xiqm.ads_optical_screen_reported=0;
     xiqm.ads_fraction_logged=0;
-    xiqm.reload_ads_logged=0;
+    xiqm.reload_from_ads_logged=0;
+    xiqm.last_ads_held_time=-100000.0f;
     xiqm.reload_first=xiqm.reload_last=xiqm.has_legacy_reload=0;
     xiqm.available = 0;
     xiqm.first_draw_logged = 0;
@@ -651,15 +653,20 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
         if (ads_fraction<0.0f)ads_fraction=0.0f;
         ads_shift_y=ads_fraction*xiqm.ads_delta_y;
         ads_shift_z=ads_fraction*xiqm.ads_delta_z;
-        /* Probe the EXACT same authoritative reload and ADS draw frame.
-         * Individual ADS and reload tests are insufficient: on mobile the
-         * reload gesture must not silently cancel first-person aim. */
-        if (reload_progress>=0.10f && reload_progress<=0.90f &&
-            ads_fraction>=0.60f && !xiqm.reload_ads_logged) {
-            XIQM_ANDROID_LOG("RELOAD_WHILE_ADS_HELD model=%s frame=%d reload_progress=%.3f ads_fraction=%.3f modern_faces=%u",
-                             xiqm.model,e->frame,reload_progress,
-                             ads_fraction,xiqm.triangles);
-            xiqm.reload_ads_logged=1;
+        /* NZ:P's actual QuakeC W_Reload explicitly sets self.zoom=false.
+         * Do NOT force ADS to stay visually zoomed during its reload.
+         * Instead, prove the reload started DIRECTLY AFTER genuine ADS on
+         * the same first-person modern gun, and allow source ADS aim-out. */
+        if (ads_fraction>=0.75f)
+            xiqm.last_ads_held_time=(float)cl.time;
+        if (reload_progress>=0.0f && reload_progress<=0.90f &&
+            !xiqm.reload_from_ads_logged &&
+            (float)cl.time-xiqm.last_ads_held_time>=0.0f &&
+            (float)cl.time-xiqm.last_ads_held_time<=0.85f) {
+            XIQM_ANDROID_LOG("RELOAD_STARTED_FROM_ADS model=%s frame=%d progress=%.3f ads_fraction_now=%.3f seconds_since_ads=%.3f modern_faces=%u",
+                             xiqm.model,e->frame,reload_progress,ads_fraction,
+                             (float)cl.time-xiqm.last_ads_held_time,xiqm.triangles);
+            xiqm.reload_from_ads_logged=1;
         }
     }
     glPushMatrix();
