@@ -676,6 +676,8 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
 void Xziel_IQM_DrawOriginalHands(entity_t *e) {
     static model_t *hands=NULL;
     static int first_report=0;
+    static int last_hand_frame=-1;
+    static int reload_motion_reported=0;
     model_t *weapon;
     if (xziel_iqm_original_hands.value==0 || !e || !e->model ||
         e!=&cl.viewent || currententity!=e ||
@@ -700,6 +702,14 @@ void Xziel_IQM_DrawOriginalHands(entity_t *e) {
     e->model=hands;
     R_DrawAliasModel(e);
     e->model=weapon;
+    if(!reload_motion_reported && last_hand_frame>=4 &&
+       last_hand_frame<=31 && e->frame>=4 && e->frame<=31 &&
+       last_hand_frame!=e->frame) {
+        XIQM_ANDROID_LOG("ORIGINAL_HANDS_RELOAD_FRAMES_ADVANCE model=%s previous=%d current=%d",
+                         hands->name,last_hand_frame,e->frame);
+        reload_motion_reported=1;
+    }
+    last_hand_frame=e->frame;
     if(!first_report) {
         XIQM_ANDROID_LOG("ORIGINAL_HANDS_SAME_46_POSE model=%s frame=%d alongside=14450-face-IQM",hands->name,e->frame);
         first_report=1;
