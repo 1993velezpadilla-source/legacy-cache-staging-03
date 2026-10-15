@@ -13,7 +13,7 @@ import re
 import statistics
 from pathlib import Path
 
-def mdl_bbox(path):
+def mdl_bbox(path, hands_only=None):
     b=path.read_bytes()
     if len(b)<84 or b[:4]!=b"IDPO" or struct.unpack_from("<I",b,4)[0]!=6:
         raise ValueError("expected Quake MDL version 6")
@@ -28,12 +28,42 @@ def mdl_bbox(path):
         typ=struct.unpack_from("<I",b,pos)[0];pos+=4
         if typ!=0:raise ValueError("grouped skins unsupported")
         pos+=w*h
-    pos+=12*verts+16*tris
+    pos+=12*verts
+    tris_offset=pos
+    stock_triangles={tuple(struct.unpack_from("<4I",b,tris_offset+16*i))
+                     for i in range(tris)}
+    selected_verts=None
+    if hands_only is not None:
+        # The authoring Blender rig and 46 stock MDL frames are preserved.
+        # But the full source frame bounding-box INCLUDES the animated hands.
+        # Its lateral midpoint is -4.41 Quake units; the actual gun centroid
+        # is -11.47, a 7-unit separation already visible on the Pixel Fold.
+        # Derive the modern-gun fit from the STOCK GUN-ONLY mesh instead.
+        h=Path(hands_only).read_bytes()
+        if h[:68]!=b[:68] or len(h)<84:
+            raise ValueError("hand separation is not from same stock MDL")
+        hand_tris=struct.unpack_from("<I",h,64)[0]
+        if not 120<=hand_tris<=550 or struct.unpack_from("<I",h,68)[0]!=frames:
+            raise ValueError("hands-only mask has unexpected frame count/faces")
+        hand_faces_start=tris_offset
+        hand_faces={tuple(struct.unpack_from("<4I",h,hand_faces_start+16*i))
+                    for i in range(hand_tris)}
+        if not hand_faces.issubset(stock_triangles):
+            raise ValueError("hands-only contains non-original gun faces")
+        gun_faces=stock_triangles-hand_faces
+        if len(gun_faces)<200:
+            raise ValueError("not enough original gun triangles after segmentation")
+        hand_vert_ids={vi for face in hand_faces for vi in face[1:]}
+        selected_verts={vi for face in gun_faces for vi in face[1:]}-hand_vert_ids
+        if not 300<=len(selected_verts)<=1800:
+            raise ValueError("invalid gun-only independent vertex count")
+    pos+=16*tris
     if pos+28+verts*4>len(b):raise ValueError("missing first MDL frame")
     frametype=struct.unpack_from("<I",b,pos)[0];pos+=4
     if frametype!=0:raise ValueError("grouped first frame unsupported")
     pos+=24
-    coords=[tuple(origin[i]+scale[i]*b[pos+4*k+i] for i in range(3)) for k in range(verts)]
+    coords=[tuple(origin[i]+scale[i]*b[pos+4*k+i] for i in range(3))
+            for k in (sorted(selected_verts) if selected_verts is not None else range(verts))]
     return [min(v[i] for v in coords) for i in range(3)], [max(v[i] for v in coords) for i in range(3)]
 
 def iqm_positions(path):
@@ -116,8 +146,8 @@ def front_sight(coords):
     return [statistics.median(v[i] for v in top) for i in range(3)]
 
 
-def write_alignment(mdl,iqm,dest,quakec=None,weapon=None):
-    amin,amax=mdl_bbox(mdl)
+def write_alignment(mdl,iqm,dest,quakec=None,weapon=None,hands_only=None):
+    amin,amax=mdl_bbox(mdl,hands_only)
     verts=iqm_positions(iqm)
     bmin=[min(v[i] for v in verts) for i in range(3)]
     bmax=[max(v[i] for v in verts) for i in range(3)]
@@ -157,13 +187,21 @@ def write_alignment(mdl,iqm,dest,quakec=None,weapon=None):
             "iqm_scale":factor,"xyz_offset":offsets,"ads_metadata":metadata,
             "sight_reference_from_geometry":sight_line(verts) if metadata else None,
             "front_sight_reference_from_geometry":front_sight(verts) if metadata else None,
-            "source_vertex_decimation":False}
+            "source_vertex_decimation":False,
+            "alignment_basis":"EXCLUSIVE_ORIGINAL_STOCK_GUN_NO_HANDS" if hands_only else "UNFILTERED_STOCK_MDL"}
     print(json.dumps(report,indent=2))
     return report
 
 if __name__=="__main__":
-    if len(sys.argv) not in (4,6):
-        raise SystemExit("usage: fit_iqm_mdl.py <viewmodel.mdl> <viewmodel.iqm> <viewmodel.iqmfit> [<QuakeC/weapon_stats.qc> <W_WEAPON>]")
-    args=list(map(Path,sys.argv[1:4]))
-    if len(sys.argv)==6:args.extend([Path(sys.argv[4]),sys.argv[5]])
-    write_alignment(*args)
+    argv=sys.argv[1:]
+    hands=None
+    if "--hands-only" in argv:
+        idx=argv.index("--hands-only")
+        if idx+1>=len(argv):raise SystemExit("--hands-only requires MDL path")
+        hands=Path(argv[idx+1])
+        argv=argv[:idx]+argv[idx+2:]
+    if len(argv) not in (3,5):
+        raise SystemExit("usage: fit_iqm_mdl.py <viewmodel.mdl> <viewmodel.iqm> <viewmodel.iqmfit> [<QuakeC/weapon_stats.qc> <W_WEAPON>] [--hands-only <original-hands.mdl>]")
+    args=list(map(Path,argv[:3]))
+    if len(argv)==5:args.extend([Path(argv[3]),argv[4]])
+    write_alignment(*args,hands_only=hands)
