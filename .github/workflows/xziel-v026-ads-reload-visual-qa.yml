@@ -96,8 +96,8 @@ jobs:
              echo 'ADS_OPTICAL_CENTERING_STILL_UNVERIFIED: separate test, not evidence of reload failure'
           fi
           grep -q 'XZIEL_IQM.*DRAWN model=models/weapons/mp40/v_mp40.mdl triangles=14450 textured_batches=2' dist/logcat.txt
-          grep -q 'XZIEL_IQM.*MODERN_MAGAZINE_COMPONENT model=models/weapons/mp40/v_mp40.mdl faces=348' dist/logcat.txt
-          if ! grep -q 'XZIEL_IQM.*RELOAD_SAME_HIGH_POLY_IQM model=models/weapons/mp40/v_mp40.mdl.*movable_magazine_faces=348' dist/logcat.txt; then
+          grep -q 'XZIEL_IQM.*MODERN_MAGAZINE_COMPONENT model=models/weapons/mp40/v_mp40.mdl faces=894' dist/logcat.txt
+          if ! grep -q 'XZIEL_IQM.*RELOAD_SAME_HIGH_POLY_IQM model=models/weapons/mp40/v_mp40.mdl.*movable_magazine_faces=894' dist/logcat.txt; then
              echo "RELOAD_SAME_MODEL_FAILED: the new modern MP40 reload was not observed"
              exit 1
           fi
@@ -105,7 +105,7 @@ jobs:
              echo "ILLEGAL_OLD_VRIL_MODEL_SWAP during modern MP40 reload"
              exit 1
           fi
-          echo "SAME_14450_FACE_MP40_RELOAD_WITH_348_MOVING_MAGAZINE_FACES_GREEN"
+          echo "SAME_14450_FACE_MP40_RELOAD_WITH_894_MOVING_MAGAZINE_FACES_GREEN"
           python3 - <<'PY'
           from pathlib import Path
           from struct import unpack_from
