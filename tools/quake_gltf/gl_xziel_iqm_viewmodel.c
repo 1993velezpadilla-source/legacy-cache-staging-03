@@ -367,6 +367,7 @@ static float xiqm_cliprow(const GLfloat p[16],const GLfloat v[4],unsigned row) {
 static void xiqm_aim_optical_sight(float fraction) {
     GLfloat m[16],p[16],pt[4],sy[4],sz[4];
     float px,py,ax,ay,bx,by,det,dy,dz;
+    static int optical_attempt_logged=0, optical_fail_logged=0;
     unsigned k;
     if (!xiqm.ads_front_valid || fraction<=0.35f) {
         if (fraction<0.05f)xiqm.ads_optical_locked=0;
@@ -386,9 +387,19 @@ static void xiqm_aim_optical_sight(float fraction) {
         ax=xiqm_cliprow(p,sy,0);ay=xiqm_cliprow(p,sy,1);
         bx=xiqm_cliprow(p,sz,0);by=xiqm_cliprow(p,sz,1);
         det=ax*by-ay*bx;
+        if (!optical_attempt_logged) {
+            XIQM_ANDROID_LOG("OPTICAL_CALC fraction=%.3f sight=(%.3f %.3f %.3f) clip=(%.3f %.3f) jacobian=(%.3f %.3f %.3f %.3f) det=%.8f fit=%.3f",
+                fraction,xiqm.ads_front[0],xiqm.ads_front[1],xiqm.ads_front[2],
+                px,py,ax,ay,bx,by,det,xiqm.fit_scale);
+            optical_attempt_logged=1;
+        }
         if (isfinite(det) && fabsf(det)>1.e-6f) {
             dy=(-px*by+bx*py)/det;
             dz=(-ax*py+ay*px)/det;
+            if (!optical_fail_logged) {
+                XIQM_ANDROID_LOG("OPTICAL_CORRECTION_CANDIDATE fraction=%.3f dy=%.3f dz=%.3f",fraction,dy,dz);
+                optical_fail_logged=1;
+            }
             if (isfinite(dy) && isfinite(dz) &&
                 fabsf(dy)<24.0f && fabsf(dz)<24.0f) {
                 xiqm.ads_optical_y=dy;
@@ -446,7 +457,14 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     /* e->origin[1] is interpolated live by authoritative CSQC
      * ViewModel_GetADSPosition; no parallel ADS clock is introduced. */
     if (i<2 && xiqm.ads_amplitude_y>1.0f) {
+        static int origin_samples=0;
         ads_fraction=e->origin[1]/xiqm.ads_amplitude_y;
+        if (origin_samples<4 && fabsf(e->origin[1])>1.0f) {
+            XIQM_ANDROID_LOG("ADS_ORIGIN_SAMPLE model=%s frame=%d origin=(%.3f %.3f %.3f) fraction=%.3f front_valid=%d",
+                            xiqm.model,e->frame,e->origin[0],e->origin[1],e->origin[2],
+                            ads_fraction,xiqm.ads_front_valid);
+            origin_samples++;
+        }
         if (ads_fraction<0.03f)ads_fraction=0.0f; /* avoid idle lateral bob */
         if (ads_fraction>1.0f)ads_fraction=1.0f;
         if (ads_fraction<0.0f)ads_fraction=0.0f;
