@@ -70,9 +70,27 @@ jobs:
             test -s "work/$item.iqm"
             python3 tools/quake_gltf/inspect_iqm.py "work/$item.iqm" --source-glb "work/$item.glb" | tee "work/$item.parity.json"
           done
-      - name: Verify no flipped winding, lost normals or changed triangle area in 20K model
+      - name: Verify triangle area and a globally consistent Quake winding convention
         run: |
+          set -euo pipefail
           python3 tools/quake_gltf/geometry_parity.py work/Synthetic20K.glb work/Synthetic20K.iqm | tee work/Synthetic20K.geometry.json
+          # Deliberately corrupt winding on 10% of faces; guard MUST reject.
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          raw=bytearray(Path('work/Synthetic20K.iqm').read_bytes())
+          tri_count=struct.unpack_from('<I',raw,56)[0]
+          ofs=struct.unpack_from('<I',raw,60)[0]
+          for i in range(0,tri_count,10):
+              first,second=struct.unpack_from('<II',raw,ofs+12*i)
+              struct.pack_into('<II',raw,ofs+12*i,second,first)
+          Path('work/BadWinding.iqm').write_bytes(raw)
+          PY
+          if python3 tools/quake_gltf/geometry_parity.py work/Synthetic20K.glb work/BadWinding.iqm > work/BadWinding.result.json; then
+             echo 'GUARD FAILED: mixed-winding fixture incorrectly accepted'
+             exit 1
+          fi
+          echo 'WINDING_GUARD_NEGATIVE_TEST_GREEN'
       - name: Compile and execute skeletal IQM pose decoder on real converted models
         run: |
           cc -std=c99 -Wall -Wextra -Werror -O2 -o work/test_iqm_skeleton tools/quake_gltf/test_iqm_animation.c -lm
