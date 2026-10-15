@@ -139,6 +139,10 @@ jobs:
              echo "ILLEGAL_OLD_VRIL_MODEL_SWAP during modern MP40 reload"
              exit 1
           fi
+          if ! grep -q 'XZIEL_IQM.*MAGAZINE_REAL_VERTEX_TRANSLATION model=models/weapons/mp40/v_mp40.mdl faces=894 vertices=2682' dist/logcat.txt; then
+             echo "MAGAZINE_NOT_ACTUALLY_TRANSLATED: reload entry is not enough for GREEN"
+             exit 1
+          fi
           echo "SAME_14450_FACE_MP40_RELOAD_WITH_894_MOVING_MAGAZINE_FACES_GREEN"
           python3 - <<'PY'
           from pathlib import Path
