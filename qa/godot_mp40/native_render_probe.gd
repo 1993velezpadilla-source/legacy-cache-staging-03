@@ -4,7 +4,7 @@ var images: Dictionary = {}
 func _initialize() -> void:
     call_deferred("_run")
 func _run() -> void:
-    var packed: PackedScene = load("res://qa/godot_mp40/source_original.glb") as PackedScene
+    var packed: PackedScene = load("res://source_original.glb") as PackedScene
     if packed == null:
         _bad("Original GLB failed import")
         return
