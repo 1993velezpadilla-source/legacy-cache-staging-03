@@ -1,0 +1,62 @@
+name: Godot 4.6 native 3D game-art render (source-only)
+on:
+  pull_request:
+    paths:
+      - 'qa/godot_mp40/**'
+      - '.github/workflows/mp40-native-godot-render.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-godot-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Godot 4.6 renderer dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libegl1 libglx-mesa0 unzip curl python3-numpy python3-pil
+          curl -fsSL --retry 3 -o /tmp/godot.zip 'https://github.com/godotengine/godot/releases/download/4.6-stable/Godot_v4.6-stable_linux.x86_64.zip'
+          mkdir -p /tmp/godot-cli
+          unzip -q /tmp/godot.zip -d /tmp/godot-cli
+          sudo install -m 755 /tmp/godot-cli/Godot_v4.6-stable_linux.x86_64 /usr/local/bin/godot
+          godot --version
+      - name: Fetch and validate REAL CC-BY original GLB asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 6 --retry-delay 3 -o qa/godot_mp40/source_original.glb 'https://zenodo.org/records/10379721/files/7ec7e1f9656e4319b8edae0d785699ad.glb?download=1'
+          echo '733d3ce5428a6451ec5231fa18e84058  qa/godot_mp40/source_original.glb' | md5sum -c
+          test -s qa/godot_mp40/source_original.glb
+      - name: Godot import of original source model
+        shell: bash
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a -s '-screen 0 1280x720x24' godot --headless --editor --path qa/godot_mp40 --import
+      - name: Native 3D render (not VTK, not generated fake frames)
+        shell: bash
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          MP40_CAPTURE_DIR: ${{ github.workspace }}/captures
+        run: |
+          set -euo pipefail
+          mkdir -p captures
+          xvfb-run -a -s '-screen 0 1280x720x24' godot --rendering-driver opengl3 --path qa/godot_mp40 --script res://native_render_probe.gd
+      - name: Detect black or invisible original source model
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 qa/godot_mp40/image_gate.py captures
+      - name: Upload screenshots and RED diagnostics (pass or fail)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MP40-REAL-ORIGINAL-GODOT-46-NATIVE-CAPTURES
+          path: captures/
+          if-no-files-found: warn
+          retention-days: 14
