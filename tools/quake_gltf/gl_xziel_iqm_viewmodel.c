@@ -123,6 +123,8 @@ static void xiqm_strncpy(char *dst, size_t capacity, const char *src) {
 #include "xiqm_animation.h"
 /* Quake alias draw is implemented in gl_rmain.c; currententity is authoritative. */
 extern void R_DrawAliasModel(entity_t *e);
+/* Directly read Vril's REAL interpolated ADS offset; no world-coordinate guess. */
+extern float Xziel_IQM_SourceADSOffsetLateral(void);
 static xzanim xza_slots[XIQM_SLOT_COUNT];
 static xzanim *xza_active=&xza_slots[0];
 #define xza (*xza_active)
@@ -589,11 +591,17 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
      * ViewModel_GetADSPosition; no parallel ADS clock is introduced. */
     if (i<2 && xiqm.ads_amplitude_y>1.0f) {
         static int origin_samples=0;
-        ads_fraction=e->origin[1]/xiqm.ads_amplitude_y;
+        /* e->origin is WORLD POSITION (e.g. -220,-100,64), NOT an
+         * ADS offset. The previous e->origin[1]/11.4 produced -8.77 in the
+         * actual Android log and clamped ADS to zero forever. cADSOfs is
+         * the original Vril first-person view transform smoothed by the
+         * original ADS timing. MP40 QuakeC lateral goal is -11.4. */
+        ads_fraction=-Xziel_IQM_SourceADSOffsetLateral()/xiqm.ads_amplitude_y;
         if (origin_samples<4 && fabsf(e->origin[1])>1.0f) {
-            XIQM_ANDROID_LOG("ADS_ORIGIN_SAMPLE model=%s frame=%d origin=(%.3f %.3f %.3f) fraction=%.3f front_valid=%d",
+            XIQM_ANDROID_LOG("ADS_SOURCE_INTERPOLATION model=%s frame=%d worldorigin=(%.3f %.3f %.3f) source_lateral=%.4f fraction=%.4f front_valid=%d",
                             xiqm.model,e->frame,e->origin[0],e->origin[1],e->origin[2],
-                            ads_fraction,xiqm.ads_front_valid);
+                            Xziel_IQM_SourceADSOffsetLateral(),ads_fraction,
+                            xiqm.ads_front_valid);
             origin_samples++;
         }
         if (ads_fraction<0.03f)ads_fraction=0.0f; /* avoid idle lateral bob */
