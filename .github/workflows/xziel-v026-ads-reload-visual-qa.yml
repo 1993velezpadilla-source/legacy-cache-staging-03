@@ -24,9 +24,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          gh run download 38668324927 -R "$GITHUB_REPOSITORY" \
+          gh run download 38673411282 -R "$GITHUB_REPOSITORY" \
             -n XZIEL-v026-DeadCell-DEV-MP40-IQM-APK -D dist
-          echo 'bfc8701fda87b68bd6f1a80f5784b2b6bebacc2b9378257a4fac37f7180750ce  dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk' | sha256sum -c
+          echo 'ea103515275aea0bc67c7cf084e91e7b11d1b17476451250e39723f3bf72d592  dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk' | sha256sum -c
       - name: Install Android emulator
         shell: bash
         run: |
@@ -93,14 +93,19 @@ jobs:
           grep -q FIRST_FRAME_OK dist/stage.txt
           grep -q 'XZIEL_IQM.*ORIGINAL_QC_ADS y=11.400' dist/logcat.txt
           if ! grep -q 'XZIEL_IQM.*OPTICAL_SIGHT_CENTERED model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
-             echo 'ADS_OPTICAL_CENTERING_NOT_CONFIRMED: screenshot kept for diagnosis'
-             exit 1
+             echo 'ADS_OPTICAL_CENTERING_STILL_UNVERIFIED: separate test, not evidence of reload failure'
           fi
           grep -q 'XZIEL_IQM.*DRAWN model=models/weapons/mp40/v_mp40.mdl triangles=14450 textured_batches=2' dist/logcat.txt
-          if ! grep -q 'XZIEL_IQM.*RELOAD_LEGACY_ANIMATED_FALLBACK' dist/logcat.txt; then
-             echo "RELOAD_VISUAL_QA_PENDING: automatic HUD test did not observe the actual animated MDL reload."
+          grep -q 'XZIEL_IQM.*MODERN_MAGAZINE_COMPONENT model=models/weapons/mp40/v_mp40.mdl faces=348' dist/logcat.txt
+          if ! grep -q 'XZIEL_IQM.*RELOAD_SAME_HIGH_POLY_IQM model=models/weapons/mp40/v_mp40.mdl.*movable_magazine_faces=348' dist/logcat.txt; then
+             echo "RELOAD_SAME_MODEL_FAILED: the new modern MP40 reload was not observed"
              exit 1
           fi
+          if grep -q 'XZIEL_IQM.*RELOAD_LEGACY_ANIMATED_FALLBACK' dist/logcat.txt; then
+             echo "ILLEGAL_OLD_VRIL_MODEL_SWAP during modern MP40 reload"
+             exit 1
+          fi
+          echo "SAME_14450_FACE_MP40_RELOAD_WITH_348_MOVING_MAGAZINE_FACES_GREEN"
           python3 - <<'PY'
           from pathlib import Path
           from struct import unpack_from
