@@ -221,6 +221,15 @@ static int xiqm_load(const char *mdlpath) {
         b->texture = -1;
         xiqm_fragment(b->material, sizeof(b->material), mat);
     }
+    if (!xza_load(&xza,buf,(size_t)file_len)) goto done;
+    xza.weighted = has_indices && has_weights && xza.joints != 0;
+    if (xza.weighted) {
+        for (i=0; i<tri_count*3u; i++) {
+            xiqm_vertex *v=&xiqm.tri_vertices[i];
+            for (j=0; j<4; j++)
+                if (v->weights[j] && v->indices[j]>=xza.joints) goto done;
+        }
+    }
     xiqm.triangles = tri_count;
     xiqm.num_batches = mesh_count;
     xiqm.available = 1;
@@ -235,6 +244,7 @@ done:
     if (!ok) {
         Con_Printf("XZIEL IQM: invalid %s, keeping original MDL\n", path);
         xiqm_free();
+        xza_clear(&xza);
     }
     return ok;
 }
@@ -242,7 +252,12 @@ qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
     unsigned i;
     if (xziel_iqm_viewmodels.value == 0 || !e || !e->model)
         return false;
+    /* Separate gun and second-view-model caches: no reload every frame. */
+    i=(e==&cl.viewent2)?1u:0u;
+    xiqm_active=&xiqm_slots[i];
+    xza_active=&xza_slots[i];
     if (strcmp(xiqm.model, e->model->name)) {
+        xza_clear(&xza);
         xiqm_free();
         xiqm_strncpy(xiqm.model, sizeof(xiqm.model), e->model->name);
         xiqm_load(xiqm.model);
