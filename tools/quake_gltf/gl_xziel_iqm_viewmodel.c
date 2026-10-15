@@ -281,6 +281,7 @@ static void xiqm_update_pose(void) {
 }
 qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
     unsigned i;
+    GLboolean depth_was_enabled, blend_was_enabled, cull_was_enabled, texture_was_enabled;
     if (xziel_iqm_viewmodels.value == 0 || !e || !e->model)
         return false;
     /* Separate gun and second-view-model caches: no reload every frame. */
@@ -297,10 +298,16 @@ qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
         return false;
     xiqm_update_pose();
 
+    depth_was_enabled=glIsEnabled(GL_DEPTH_TEST);
+    blend_was_enabled=glIsEnabled(GL_BLEND);
+    cull_was_enabled=glIsEnabled(GL_CULL_FACE);
+    texture_was_enabled=glIsEnabled(GL_TEXTURE_2D);
     glPushMatrix();
     R_RotateForEntity(e, e->scale);
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
+    /* Diagnostic path keeps both sides visible until winding is verified. */
+    glDisable(GL_CULL_FACE);
     glColor4f(1,1,1,1);
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
     glEnableClientState(GL_VERTEX_ARRAY);
@@ -335,5 +342,9 @@ qboolean Xziel_IQM_DrawViewModel(entity_t *e) {
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
     glColor4f(1,1,1,1);
     glPopMatrix();
+    if (cull_was_enabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+    if (blend_was_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    if (depth_was_enabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (texture_was_enabled) glEnable(GL_TEXTURE_2D); else glDisable(GL_TEXTURE_2D);
     return true;
 }
