@@ -3,7 +3,7 @@
 
 Reads the actual, unchanged MP40 IQM geometry; identifies disconnected
 magazine surface components whose bounds reach the bottom of the gun.
-The mask does not modify geometry or textures and moves only its 348
+The mask does not modify geometry or textures and moves only its 894
 source triangles. Fail rather than animate a wrong weapon component.
 
 File format: 8 bytes XIQMPART + LE u32 triangle_count + packed bitset
@@ -39,50 +39,21 @@ def extract(path):
     return positions,triangles
 
 def mask_magazine(positions, triangles):
-    n=len(positions)
-    parent=list(range(n))
-    rank=bytearray(n)
-    def root(i):
-        while parent[i]!=i:
-            parent[i]=parent[parent[i]]
-            i=parent[i]
-        return i
-    def join(a,b):
-        a=root(a);b=root(b)
-        if a==b:return
-        if rank[a]<rank[b]:a,b=b,a
-        parent[b]=a
-        if rank[a]==rank[b]:rank[a]+=1
-    for a,b,c in triangles:
-        join(a,b);join(a,c)
-    comps={}
-    for i,(a,b,c) in enumerate(triangles):
-        r=root(a)
-        comps.setdefault(r,[]).append(i)
-    # The source MP40 has a distinct long magazine bottom at z=-0.146.
-    # Derive bounds from the actual geometry; do NOT rely on material naming.
-    lowest=min(p[2] for p in positions)
-    bottom=[v for v in positions if v[2]<lowest+.010]
-    if len(bottom)<12:raise ValueError("No bottom magazine geometry")
-    bx0=min(v[0] for v in bottom)
-    bx1=max(v[0] for v in bottom)
-    if not 0.01<bx1-bx0<0.10:raise ValueError("Implausible magazine width")
-    mag=[]
-    for inds in comps.values():
-        vertex_ids={idx for face_i in inds for idx in triangles[face_i]}
-        vs=[positions[idx] for idx in vertex_ids]
-        minx=min(v[0] for v in vs);maxx=max(v[0] for v in vs)
-        minz=min(v[2] for v in vs)
-        if minz < lowest+.055 and minx>=bx0-.015 and maxx<=bx1+.015:
-            mag.extend(inds)
+    # UV and normal seams duplicate vertices in FTE IQM. Vertex-index-only
+    # connectivity misses >50% of this MP40 magazine (floorplate and ribs).
+    # Group faces by *positions* at 1e-5 to recover disconnected rigid
+    # islands, then select all islands lying wholly inside the source GLB's
+    # magazine bounds; no receiver or stock vertices are moved.
+    from extract_iqm_magazine import select_mag, PROFILES
+    mag,components=select_mag(positions,triangles,PROFILES["mp40_moony_state"])
     mag.sort()
-    if not 0.015<len(mag)/len(triangles)<0.04:
-        raise ValueError("Ambiguous magazine segmentation fraction")
-    if len(positions)==12628 and len(triangles)==14450 and len(mag)!=348:
-        raise ValueError("Unexpected MP40 magazine triangle count; verify geometry manually")
-    return mag,{"triangle_count":len(triangles),"magazine_triangles":len(mag),
-                "bottom_z":lowest,"bottom_x":[bx0,bx1],
-                "components_total":len(comps)}
+    if len(positions)==12628 and len(triangles)==14450 and len(mag)!=894:
+        raise ValueError("MP40 magazine components changed; refuse inaccurate animation")
+    return mag, {"triangle_count":len(triangles),
+                 "magazine_triangles":len(mag),
+                 "magazine_components":len(components),
+                 "magazine_bounds":components,
+                 "source_decimation":False}
 
 def generate(inp, output):
     positions,faces=extract(inp)
