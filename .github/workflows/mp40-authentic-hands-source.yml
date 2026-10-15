@@ -58,6 +58,8 @@ jobs:
           grep -q MP40_AUTHENTIC_SOURCE_HANDS_46_FRAME_SPLIT_GREEN dist/hands.log
           grep -q MP40_STOCK_GUN_RIGID_POSE_46_FRAME_GREEN dist/hands.log
           test -s /tmp/mp40-split/v_mp40.iqmpose
+          test -s /tmp/mp40-split/v_mp40.iqmclip
+          grep -q MP40_ORIGINAL_MAG_CLIP_46_KEYFRAMES_GREEN dist/hands.log
           python3 - <<'PY'
           from pathlib import Path
           import json,struct
@@ -75,6 +77,11 @@ jobs:
           pose=Path("/tmp/mp40-split/v_mp40.iqmpose").read_bytes()
           assert pose[:8]==b"XIQMPOSE" and struct.unpack_from("<I",pose,8)[0]==46
           assert len(pose)==12+46*64
+          clip=Path("/tmp/mp40-split/v_mp40.iqmclip").read_bytes()
+          assert clip[:8]==b"XIQMCLIP" and struct.unpack_from("<I",clip,8)[0]==46
+          assert len(clip)==12+46*12
+          assert 8<=r["original_magazine_source_vertices"]<=26
+          assert 18<r["original_magazine_max_relative_motion_quake_units"]<48
           assert r['runtime_renderer_enabled'] is False
           print('MP40_SOURCE_HANDS_REAL_46_FRAMES_VERIFIED_NONSHIPPING')
           PY

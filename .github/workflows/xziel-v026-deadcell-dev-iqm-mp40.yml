@@ -148,6 +148,8 @@ jobs:
           grep -q MP40_AUTHENTIC_SOURCE_HANDS_46_FRAME_SPLIT_GREEN work/hands-split.log
           grep -q MP40_STOCK_GUN_RIGID_POSE_46_FRAME_GREEN work/hands-split.log
           test -s dead-cell-overlay/models/weapons/mp40/v_mp40.iqmpose
+          test -s dead-cell-overlay/models/weapons/mp40/v_mp40.iqmclip
+          grep -q MP40_ORIGINAL_MAG_CLIP_46_KEYFRAMES_GREEN work/hands-split.log
           test -s dead-cell-overlay/models/weapons/mp40/v_mp40_hands_only.mdl
           python3 - <<'PY'
           import json
@@ -158,6 +160,7 @@ jobs:
           assert p["skins_and_vertex_uvs_unchanged"]
           assert p["modern_weapon_follows_original_stock_gun_pose"]
           assert p["stock_gun_pose_max_rotation_degrees"]>25.0
+          assert 18<p["original_magazine_max_relative_motion_quake_units"]<48
           assert p["stock_gun_pose_worst_90pct_rigid_error"]<3.0
           print("NZP_REAL_46_FRAME_HANDS_READY_FOR_MODERN_IQM_OVERLAY")
           PY
@@ -243,6 +246,9 @@ jobs:
               assert pose[:8]==b"XIQMPOSE" and len(pose)==12+46*64
               assert struct.unpack_from("<I",pose,8)[0]==46
               assert hr["stock_gun_pose_max_rotation_degrees"]>25
+              clip=z.read("nzp/models/weapons/mp40/v_mp40.iqmclip")
+              assert clip[:8]==b"XIQMCLIP" and len(clip)==12+46*12
+              assert struct.unpack_from("<I",clip,8)[0]==46
               print("APKBUNDLE_ORIGINAL_ANIMATED_HANDS_WITHOUT_OLD_GUN_GREEN")
               mask=z.read("nzp/models/weapons/mp40/v_mp40.iqmparts")
               assert mask[:8]==b'XIQMPART'
@@ -401,6 +407,9 @@ jobs:
           if ! grep -q 'XZIEL_IQM.*ORIGINAL_GUN_POSE_46_SOURCE_FRAMES_LOADED' dist/modern-reload-logcat.txt; then
             echo 'MP40_GUN_POSE_SIDECAR_NOT_LOADED'; exit 1
           fi
+          if ! grep -q 'XZIEL_IQM.*ORIGINAL_MAGAZINE_SOURCE_46_KEYFRAMES_LOADED model=models/weapons/mp40/v_mp40.mdl' dist/modern-reload-logcat.txt; then
+            echo 'ORIGINAL_SOURCE_MAG_PATH_NOT_USED'; exit 1
+          fi
           if ! grep -q 'XZIEL_IQM.*MODERN_MP40_STOCK_RELOAD_POSE_FOLLOW' dist/modern-reload-logcat.txt; then
             echo 'MP40_MODERN_GUN_NOT_FOLLOWING_ORIGINAL_RELOAD_POSE'; exit 1
           fi
@@ -418,7 +427,7 @@ jobs:
             echo 'FAILED: obsolete old-MDL reload renderer still active'
             exit 1
           fi
-          if ! grep -q 'XZIEL_IQM.*MAGAZINE_REAL_VERTEX_TRANSLATION model=models/weapons/mp40/v_mp40.mdl faces=894 vertices=2682' dist/modern-reload-logcat.txt; then
+          if ! grep -q 'XZIEL_IQM.*MAGAZINE_REAL_VERTEX_TRANSLATION model=models/weapons/mp40/v_mp40.mdl faces=894 vertices=2682 mode=AUTHENTIC_46_FRAME_LOCAL_CLIP' dist/modern-reload-logcat.txt; then
             echo 'FAILED: reload started but no proof all 894 magazine triangles moved in the actual render buffer'
             exit 1
           fi

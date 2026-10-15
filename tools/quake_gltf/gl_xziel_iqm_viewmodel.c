@@ -59,6 +59,8 @@ typedef struct {
     GLfloat stock_gun_pose[46][16];
     unsigned stock_gun_pose_frames;
     int stock_gun_pose_logged;
+    GLfloat stock_mag_local[46][3];
+    unsigned stock_mag_frames;
 } xiqm_state;
 
 #define XIQM_SLOT_COUNT 24u
@@ -102,6 +104,7 @@ static void xiqm_free(void) {
     xiqm.magazine_drop=xiqm.magazine_side=0.0f;
     xiqm.stock_gun_pose_frames=0;
     xiqm.stock_gun_pose_logged=0;
+    xiqm.stock_mag_frames=0;
     xiqm.tri_vertices = NULL;
     xiqm.batches = NULL;
     xiqm.triangles = 0;
@@ -275,6 +278,55 @@ static void xiqm_load_original_gun_pose(const char *mdlpath) {
                          path,degrees);
     }
     xiqm.stock_gun_pose_frames=46u;
+}
+/* Exact original NZ:P MP40 magazine trajectory measured from the original
+ * 46 stock MDL frames. The new 894-face modern magazine now travels through
+ * the SOURCE hands' path, not guessed z-drop/sideways smoothstep offsets.
+ * Deltas are stored in LOCAL GUN space in Quake units, divided by fit_scale
+ * only when applying them to the unmodified imported IQM geometry. */
+static void xiqm_load_original_magazine(const char *mdlpath) {
+    unsigned char raw[12u+46u*12u];
+    char path[160];
+    FILE *f=NULL;
+    int len;
+    unsigned i,k;
+    float maxmotion=0.0f;
+    if (xiqm.stock_gun_pose_frames!=46u ||
+        strlen(mdlpath)<5 || strlen(mdlpath)+12>=sizeof(path)) return;
+    snprintf(path,sizeof(path),"%.*s.iqmclip",(int)(strlen(mdlpath)-4),mdlpath);
+    len=COM_FOpenFile(path,&f);
+    if (!f || len!=(int)sizeof(raw)) {
+        XIQM_ANDROID_LOG("ORIGINAL_MAGAZINE_CLIP_MISSING file=%s bytes=%d",path,len);
+        if (f)fclose(f);
+        return;
+    }
+    if (fread(raw,1,sizeof(raw),f)!=sizeof(raw)) { fclose(f);return; }
+    fclose(f);
+    if(memcmp(raw,"XIQMCLIP",8) || xiqm_u32(raw+8)!=46u) {
+        XIQM_ANDROID_LOG("ORIGINAL_MAGAZINE_CLIP_BAD_HEADER file=%s",path);
+        return;
+    }
+    for(i=0;i<46u;i++) {
+        for(k=0;k<3u;k++) {
+            float v=xiqm_f32(raw+12u+i*12u+k*4u);
+            if(!isfinite(v) || fabsf(v)>65.0f) return;
+            xiqm.stock_mag_local[i][k]=v;
+            if(i>=4u && i<=31u && fabsf(v)>maxmotion)maxmotion=fabsf(v);
+        }
+    }
+    if(!(maxmotion>18.f && maxmotion<48.f) ||
+       fabsf(xiqm.stock_mag_local[0][0])>.01f ||
+       fabsf(xiqm.stock_mag_local[0][1])>.01f ||
+       fabsf(xiqm.stock_mag_local[0][2])>.01f ||
+       fabsf(xiqm.stock_mag_local[30][0])>.6f ||
+       fabsf(xiqm.stock_mag_local[30][1])>.6f ||
+       fabsf(xiqm.stock_mag_local[30][2])>.6f) {
+        XIQM_ANDROID_LOG("ORIGINAL_MAGAZINE_CLIP_GEOMETRY_RED file=%s max=%.3f",path,maxmotion);
+        return;
+    }
+    xiqm.stock_mag_frames=46u;
+    XIQM_ANDROID_LOG("ORIGINAL_MAGAZINE_SOURCE_46_KEYFRAMES_LOADED model=%s vertices=12 max_local_quake=%.3f",
+                     mdlpath,maxmotion);
 }
 static int xiqm_load(const char *mdlpath) {
     char path[128], folder[128];
@@ -463,6 +515,7 @@ static int xiqm_load(const char *mdlpath) {
     xiqm.num_batches = mesh_count;
     xiqm_load_moving_magazine(mdlpath);
     xiqm_load_original_gun_pose(mdlpath);
+    xiqm_load_original_magazine(mdlpath);
     xiqm.available = 1;
     ok = 1;
     Con_Printf("XZIEL IQM: loaded %s meshes=%u triangles=%u vertices=%u\n",
@@ -506,20 +559,34 @@ static float xiqm_magazine_motion(float progress) {
     if (progress<0.91f) return 1.0f-xiqm_smooth((progress-0.62f)/0.29f);
     return 0.0f;
 }
-static void xiqm_update_pose(float reload_progress) {
+static void xiqm_update_pose(float reload_progress,int legacy_frame) {
     unsigned i,k;
-    int active=0;
+    int active=0,use_stock_mag=0;
+    float mag_shift[3]={0.f,0.f,0.f}, shift_magnitude;
+    unsigned translated_vertices=0;
     float magazine_movement=xiqm_magazine_motion(reload_progress);
     float magazine_side=0.0f;
-    unsigned translated_vertices=0;
     if (reload_progress>=0.16f && reload_progress<=0.88f) {
         if(reload_progress<0.42f)
             magazine_side=xiqm_smooth((reload_progress-0.16f)/0.26f);
-        else if(reload_progress<=0.66f)
-            magazine_side=1.0f;
-        else
-            magazine_side=1.0f-xiqm_smooth((reload_progress-0.66f)/0.22f);
+        else if(reload_progress<=0.66f)magazine_side=1.0f;
+        else magazine_side=1.0f-xiqm_smooth((reload_progress-0.66f)/0.22f);
     }
+    /* Frame-accurate original clip path takes priority. The QuakeC frame
+     * drives BOTH source hands and high-poly mag; never run both motion
+     * systems in parallel (that doubled the displacement on Android). */
+    if (xiqm.stock_mag_frames==46u &&
+        legacy_frame>=0 && legacy_frame<46 && reload_progress>=0.f) {
+        for(k=0;k<3u;k++)
+            mag_shift[k]=xiqm.stock_mag_local[legacy_frame][k]/xiqm.fit_scale;
+        use_stock_mag=1;
+    } else {
+        mag_shift[1]=-xiqm.magazine_side*magazine_side;
+        mag_shift[2]=-xiqm.magazine_drop*magazine_movement;
+    }
+    shift_magnitude=sqrtf(mag_shift[0]*mag_shift[0]+
+                          mag_shift[1]*mag_shift[1]+
+                          mag_shift[2]*mag_shift[2]);
     if (xziel_iqm_preview_clip.value>=0 && xza.weighted &&
         xziel_iqm_preview_clip.value<(float)xza.clips)
         active=xza_eval(&xza,(unsigned)xziel_iqm_preview_clip.value,(float)cl.time);
@@ -542,33 +609,26 @@ static void xiqm_update_pose(float reload_progress) {
                 memcpy(v->p,accum,sizeof(accum));
             } else memcpy(v->p,v->bind,sizeof(v->bind));
         } else memcpy(v->p,v->bind,sizeof(v->bind));
-        if (magazine_movement>0.0f && xiqm.magazine_bits &&
+        if (shift_magnitude>0.00001f && xiqm.magazine_bits &&
             (xiqm.magazine_bits[(i/3u)/8u] & (1u << ((i/3u)%8u)))) {
-            /* Real magazine triangles from THIS 14,450-face high-poly IQM.
-             * Keep geometry, base-color UVs, material and normals intact. */
-            /* Same modern magazine descends from receiver, drifts LEFT
-             * on extraction, then inserts before source reload completes.
-             * This deliberately does NOT resurrect the Quake MDL gun. */
-            {
-                float old_z=v->p[2];
-                v->p[1]-=xiqm.magazine_side*magazine_side;
-                v->p[2]-=xiqm.magazine_drop*magazine_movement;
-                if (!xiqm.magazine_motion_logged && magazine_movement>=0.8f &&
-                    fabsf(v->p[2]-old_z)>0.001f)
-                    translated_vertices++;
-            }
+            /* Preserve actual imported 14,450-face high-poly geometry
+             * and original UVs; move ONLY the 894 real magazine triangles. */
+            float old[3]={v->p[0],v->p[1],v->p[2]};
+            for(k=0;k<3u;k++)v->p[k]+=mag_shift[k];
+            if(!xiqm.magazine_motion_logged &&
+               ((use_stock_mag && shift_magnitude>0.1f) ||
+                (!use_stock_mag && magazine_movement>=0.8f)) &&
+               (fabsf(v->p[0]-old[0])+fabsf(v->p[1]-old[1])+
+                fabsf(v->p[2]-old[2]))>0.001f)
+                translated_vertices++;
         }
     }
-    /* The existing reload-start log only proves that the legacy frame range
-     * was entered. This later probe proves the renderer actually translated
-     * every selected high-poly IQM vertex in a nonzero extraction pose. */
-    if (!xiqm.magazine_motion_logged && magazine_movement>=0.8f &&
-        translated_vertices==xiqm.magazine_faces*3u &&
-        xiqm.magazine_faces>0u) {
-        XIQM_ANDROID_LOG("MAGAZINE_REAL_VERTEX_TRANSLATION model=%s faces=%u vertices=%u down=%.5f side=%.5f progress=%.3f",
+    if(!xiqm.magazine_motion_logged && translated_vertices==xiqm.magazine_faces*3u &&
+       xiqm.magazine_faces>0u) {
+        XIQM_ANDROID_LOG("MAGAZINE_REAL_VERTEX_TRANSLATION model=%s faces=%u vertices=%u mode=%s frame=%d dx=%.5f dy=%.5f dz=%.5f progress=%.3f",
                          xiqm.model,xiqm.magazine_faces,translated_vertices,
-                         xiqm.magazine_drop*magazine_movement,
-                         xiqm.magazine_side*magazine_side,reload_progress);
+                         use_stock_mag?"AUTHENTIC_46_FRAME_LOCAL_CLIP":"legacy_procedural",
+                         legacy_frame,mag_shift[0],mag_shift[1],mag_shift[2],reload_progress);
         xiqm.magazine_motion_logged=1;
     }
 }
@@ -697,7 +757,7 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
                             xiqm.model,e->frame,xiqm.magazine_faces);
             logged=1;
         }
-        xiqm_update_pose(progress);
+        xiqm_update_pose(progress,e->frame);
     }
 
     depth_was_enabled=glIsEnabled(GL_DEPTH_TEST);

@@ -171,10 +171,12 @@ def main():
         time.sleep(0.60)
         up(1)
         held_other=False
-        time.sleep(0.12)
+        # QuakeC won't start reload while fire_delay / new_anim_stop is
+        # still active, even if the input is physically received.
+        time.sleep(0.32)
         down(1,93,*RELOAD,limits,angle)
         held_other=True
-        time.sleep(0.12)
+        time.sleep(0.24)
         up(1)
         held_other=False
         time.sleep(0.22)

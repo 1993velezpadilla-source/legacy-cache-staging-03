@@ -114,22 +114,11 @@ jobs:
             echo "MP40 did not render in time"; exit 1
           fi
           "$ADB" exec-out screencap -p > dist/00-hipfire-real.png
-          # From the original v0.26 HUD defaults, norm=(x,y):
-          # ADS=(.695,.575), FIRE=(.885,.585), RELOAD=(.805,.785).
-          # Target emulator is 2400x1080; press ADS as a sustained touch.
-          "$ADB" shell input swipe 1668 621 1668 621 2000 > dist/ads-input.txt 2>&1 &
-          ADS_PID=$!
-          sleep 1
-          "$ADB" exec-out screencap -p > dist/01-ads-held-real.png
-          wait "$ADS_PID"
-          sleep 0.3
-          "$ADB" shell input swipe 2124 632 2124 632 900
-          sleep 0.2
-          "$ADB" shell input tap 1932 848
-          sleep 0.3
-          "$ADB" exec-out screencap -p > dist/02-reload-early-real.png
-          sleep 0.9
-          "$ADB" exec-out screencap -p > dist/03-reload-middle-real.png
+          # Do not first waste 8-15 seconds on a redundant, single-pointer
+          # fire/reload sequence! Zombies kill the unattended emulated player
+          # and earlier CI produced a MAIN MENU screenshot while testing
+          # multiplayer touch. The dedicated multi-pointer ADS/fire/reload
+          # script runs IMMEDIATELY after the real first frame.
           # Prove reload was TRIGGERED FROM ADS with a SECOND real pointer.
           # Original NZ:P W_Reload forces zoom=false; first-person aim-out
           # during reload is correct. Never require zoom to remain fixed.
@@ -155,6 +144,9 @@ jobs:
           fi
           if ! grep -q 'XZIEL_IQM.*ORIGINAL_GUN_POSE_46_SOURCE_FRAMES_LOADED' dist/logcat.txt; then
              echo 'ORIGINAL_GUN_POSE_NOT_LOADED_ANDROID'; exit 1
+          fi
+          if ! grep -q 'XZIEL_IQM.*ORIGINAL_MAGAZINE_SOURCE_46_KEYFRAMES_LOADED model=models/weapons/mp40/v_mp40.mdl' dist/logcat.txt; then
+             echo 'ORIGINAL_MAGAZINE_46_POSE_SOURCE_MISSING'; exit 1
           fi
           if ! grep -q 'XZIEL_IQM.*MODERN_MP40_STOCK_RELOAD_POSE_FOLLOW' dist/logcat.txt; then
              echo 'HIGH_POLY_GUN_RELOAD_POSE_NOT_APPLIED_ANDROID'; exit 1
@@ -183,7 +175,7 @@ jobs:
              echo "ILLEGAL_OLD_VRIL_MODEL_SWAP during modern MP40 reload"
              exit 1
           fi
-          if ! grep -q 'XZIEL_IQM.*MAGAZINE_REAL_VERTEX_TRANSLATION model=models/weapons/mp40/v_mp40.mdl faces=894 vertices=2682' dist/logcat.txt; then
+          if ! grep -q 'XZIEL_IQM.*MAGAZINE_REAL_VERTEX_TRANSLATION model=models/weapons/mp40/v_mp40.mdl faces=894 vertices=2682 mode=AUTHENTIC_46_FRAME_LOCAL_CLIP' dist/logcat.txt; then
              echo "MAGAZINE_NOT_ACTUALLY_TRANSLATED: reload entry is not enough for GREEN"
              exit 1
           fi

@@ -247,6 +247,63 @@ pose_blob=b"XIQMPOSE"+struct.pack("<I",nframes)+b"".join(pose_blocks)
 assert len(pose_blob)==12+nframes*64
 pose_file.parent.mkdir(parents=True,exist_ok=True)
 pose_file.write_bytes(pose_blob)
+# Preserve the ORIGINAL stock NZ:P magazine's actual trajectory as well.
+# Previously we made the 894-face MODERN mag follow invented down/side
+# smoothsteps, even though the original hands were animated around a
+# DIFFERENT clip path. The stock MDL frames carry that exact path.
+#
+# Isolate the elongated piece reaching the lowest Z of the ORIGINAL GUN.
+# Do not use arbitrary source vertex indices: discover and validate the
+# original mag's narrow X/Y footprint and 17-unit vertical extent.
+base_frame=dequantized(frames[0])
+gun_base=base_frame[gun_vertices]
+lowest_z=float(gun_base[:,2].min())
+mag_bottom=gun_base[gun_base[:,2]<lowest_z+0.5]
+if not 3<=len(mag_bottom)<=12:
+    raise RuntimeError("NZP_ORIGINAL_MAG_CLIP_RED ambiguous lowest gun piece")
+low=mag_bottom.min(axis=0)
+high=mag_bottom.max(axis=0)
+clip_vertices=[i for i in gun_vertices
+               if low[0]-0.5<=base_frame[i,0]<=high[0]+0.5
+               and low[1]-0.5<=base_frame[i,1]<=high[1]+0.5
+               and lowest_z-0.1<=base_frame[i,2]<=lowest_z+18]
+clip_span=np.ptp(base_frame[clip_vertices],axis=0)
+if not (8<=len(clip_vertices)<=26 and 2<clip_span[0]<6
+        and 1<clip_span[1]<4 and 15<clip_span[2]<20):
+    raise RuntimeError("NZP_ORIGINAL_MAG_CLIP_RED geometry insufficient "+
+                       repr((len(clip_vertices),clip_span.tolist())))
+stock_clip_reference=base_frame[clip_vertices].mean(axis=0)
+clip_deltas=[]
+clip_records=[]
+for frame_i,frame_bytes in enumerate(frames):
+    # Pose transforms reference MDL gun points into stock frame i;
+    # recover the same row-vector matrix in source Quake coordinates.
+    root=np.frombuffer(pose_blocks[frame_i],dtype="<f4").reshape((4,4),order="F")
+    root_rot=root[:3,:3].T.astype(np.float64)
+    root_t=root[:3,3].astype(np.float64)
+    clip_center=dequantized(frame_bytes)[clip_vertices].mean(axis=0)
+    expected=stock_clip_reference@root_rot+root_t
+    # Compute magazine displacement IN THE LOCAL MOVING GUN frame.
+    # The renderer divides this by the existing IQM->MDL fit_scale.
+    local=(clip_center-expected)@root_rot.T
+    if not np.isfinite(local).all() or np.max(np.abs(local))>65:
+        raise RuntimeError("NZP_ORIGINAL_MAG_CLIP_RED bad keyframed displacement")
+    clip_deltas.append(struct.pack("<3f",*map(float,local)))
+    clip_records.append(list(map(float,local)))
+largest=float(np.max(np.abs(np.asarray(clip_records)[4:32])))
+if not (18<largest<48 and np.linalg.norm(clip_records[0])<.001
+        and np.linalg.norm(clip_records[30])<.6):
+    raise RuntimeError("NZP_ORIGINAL_MAG_CLIP_RED did not recover real reload movement "+str(largest))
+clip_blob=b"XIQMCLIP"+struct.pack("<I",nframes)+b"".join(clip_deltas)
+assert len(clip_blob)==12+nframes*12
+clip_path=pose_file.with_suffix(".iqmclip")
+clip_path.write_bytes(clip_blob)
+report["original_magazine_clip_motion"]="AUTHENTIC_46_FRAME_SOURCE_GUN_LOCAL_CENTROID"
+report["original_magazine_source_vertices"]=len(clip_vertices)
+report["original_magazine_max_relative_motion_quake_units"]=largest
+report["original_magazine_clip_file_sha256"]=hashlib.sha256(clip_blob).hexdigest()
+report["original_magazine_clip_sidecar_bytes"]=len(clip_blob)
+print("MP40_ORIGINAL_MAG_CLIP_46_KEYFRAMES_GREEN",len(clip_vertices),largest)
 report["modern_weapon_follows_original_stock_gun_pose"]=True
 report["stock_gun_pose_reference_frame"]=0
 report["stock_gun_pose_max_rotation_degrees"]=peak_angle
