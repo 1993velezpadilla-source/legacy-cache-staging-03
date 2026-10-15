@@ -41,6 +41,9 @@ typedef struct {
     int available, first_draw_logged;
     unsigned triangles, num_batches;
     float fit_scale, fit_pos[3];
+    /* Optional model-specific original-QuakeC ADS alignment. */
+    float ads_amplitude_y, ads_delta_y, ads_delta_z;
+    int reload_first, reload_last, has_legacy_reload;
     xiqm_vertex *tri_vertices;
     xiqm_batch *batches;
 } xiqm_state;
@@ -82,6 +85,8 @@ static void xiqm_free(void) {
     xiqm.num_batches = 0;
     xiqm.fit_scale = 1.0f;
     xiqm.fit_pos[0]=xiqm.fit_pos[1]=xiqm.fit_pos[2]=0.0f;
+    xiqm.ads_amplitude_y=xiqm.ads_delta_y=xiqm.ads_delta_z=0.0f;
+    xiqm.reload_first=xiqm.reload_last=xiqm.has_legacy_reload=0;
     xiqm.available = 0;
     xiqm.first_draw_logged = 0;
 }
@@ -246,21 +251,42 @@ static int xiqm_load(const char *mdlpath) {
         }
     }
     {
-        char fitname[160], fitbuf[128];
+        char fitname[160], fitbuf[256];
         FILE *fitfile=NULL;
         int fitbytes;
-        float s,tx,ty,tz;
+        float s,tx,ty,tz,ads_y,delta_y,delta_z,reload_lo,reload_hi;
         if (strlen(mdlpath)+5 < sizeof(fitname)) {
             snprintf(fitname,sizeof(fitname),"%.*s.iqmfit",(int)(strlen(mdlpath)-4),mdlpath);
             fitbytes=COM_FOpenFile(fitname,&fitfile);
             if (fitfile && fitbytes>0 && fitbytes<(int)sizeof(fitbuf) &&
                 fread(fitbuf,1,(size_t)fitbytes,fitfile)==(size_t)fitbytes) {
                 fitbuf[fitbytes]=0;
-                if (sscanf(fitbuf,"%f %f %f %f",&s,&tx,&ty,&tz)==4 &&
-                    isfinite(s)&&isfinite(tx)&&isfinite(ty)&&isfinite(tz)&&
+                int parsed=sscanf(fitbuf,"%f %f %f %f %f %f %f %f %f",
+                                  &s,&tx,&ty,&tz,&ads_y,&delta_y,&delta_z,
+                                  &reload_lo,&reload_hi);
+                if (parsed>=4 && isfinite(s)&&isfinite(tx)&&isfinite(ty)&&isfinite(tz)&&
                     s>0.001f && s<1000.0f) {
                     xiqm.fit_scale=s;
                     xiqm.fit_pos[0]=tx;xiqm.fit_pos[1]=ty;xiqm.fit_pos[2]=tz;
+                    if (parsed==9 && isfinite(ads_y) && isfinite(delta_y) &&
+                        isfinite(delta_z) && isfinite(reload_lo) && isfinite(reload_hi) &&
+                        ads_y>1.0f && ads_y<100.0f &&
+                        delta_y>-100.0f && delta_y<100.0f &&
+                        delta_z>-100.0f && delta_z<100.0f &&
+                        reload_lo>=1.0f && reload_lo<=255.0f &&
+                        reload_hi>reload_lo && reload_hi<=255.0f &&
+                        reload_lo==(float)(int)reload_lo &&
+                        reload_hi==(float)(int)reload_hi) {
+                        xiqm.ads_amplitude_y=ads_y;
+                        xiqm.ads_delta_y=delta_y;
+                        xiqm.ads_delta_z=delta_z;
+                        xiqm.reload_first=(int)reload_lo;
+                        xiqm.reload_last=(int)reload_hi;
+                        xiqm.has_legacy_reload=1;
+                        XIQM_ANDROID_LOG("ORIGINAL_QC_ADS y=%.3f delta_y=%.3f delta_z=%.3f reload_frames=%d..%d",
+                                        ads_y,delta_y,delta_z,
+                                        xiqm.reload_first,xiqm.reload_last);
+                    }
                     Con_Printf("XZIEL IQM alignment %s scale=%.3f translate=%.3f %.3f %.3f\\n",fitname,s,tx,ty,tz);
                 }
             }
@@ -322,6 +348,7 @@ static void xiqm_update_pose(void) {
 static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     GLboolean depth_was_enabled, blend_was_enabled, cull_was_enabled, texture_was_enabled;
     unsigned textured_batches=0;
+    float ads_fraction=0.0f, ads_shift_y=0.0f, ads_shift_z=0.0f;
     if (!e || !e->model || i>=XIQM_SLOT_COUNT)
         return false;
     xiqm_active=&xiqm_slots[i];
@@ -334,15 +361,38 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
     }
     if (!xiqm.available)
         return false;
+    /* A static GLB has ZERO reload clips. Instead of presenting a frozen
+     * magazine, let the actual animated Quake MDL draw during its
+     * authoritative QuakeC reload frames. This is a temporary fidelity
+     * fallback, not an invented animation of the high-poly mesh. */
+    if (i<2 && xiqm.has_legacy_reload &&
+        e->frame >= xiqm.reload_first && e->frame <= xiqm.reload_last) {
+        static int reload_once=0;
+        if (!reload_once) {
+            XIQM_ANDROID_LOG("RELOAD_LEGACY_ANIMATED_FALLBACK model=%s frame=%d",xiqm.model,e->frame);
+            reload_once=1;
+        }
+        return false;
+    }
     xiqm_update_pose();
 
     depth_was_enabled=glIsEnabled(GL_DEPTH_TEST);
     blend_was_enabled=glIsEnabled(GL_BLEND);
     cull_was_enabled=glIsEnabled(GL_CULL_FACE);
     texture_was_enabled=glIsEnabled(GL_TEXTURE_2D);
+    /* e->origin[1] is interpolated live by authoritative CSQC
+     * ViewModel_GetADSPosition; no parallel ADS clock is introduced. */
+    if (i<2 && xiqm.ads_amplitude_y>1.0f) {
+        ads_fraction=e->origin[1]/xiqm.ads_amplitude_y;
+        if (ads_fraction<0.03f)ads_fraction=0.0f; /* avoid idle lateral bob */
+        if (ads_fraction>1.0f)ads_fraction=1.0f;
+        if (ads_fraction<0.0f)ads_fraction=0.0f;
+        ads_shift_y=ads_fraction*xiqm.ads_delta_y;
+        ads_shift_z=ads_fraction*xiqm.ads_delta_z;
+    }
     glPushMatrix();
     R_RotateForEntity(e, e->scale);
-    glTranslatef(xiqm.fit_pos[0],xiqm.fit_pos[1],xiqm.fit_pos[2]);
+    glTranslatef(xiqm.fit_pos[0],xiqm.fit_pos[1]+ads_shift_y,xiqm.fit_pos[2]+ads_shift_z);
     glScalef(xiqm.fit_scale,xiqm.fit_scale,xiqm.fit_scale);
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
@@ -379,7 +429,9 @@ static qboolean xiqm_draw_entity(entity_t *e, unsigned i) {
         glDrawArrays(GL_TRIANGLES, (GLint)b->start, (GLsizei)b->count);
     }
     if (!xiqm.first_draw_logged) {
-        XIQM_ANDROID_LOG("DRAWN model=%s triangles=%u textured_batches=%u",xiqm.model,xiqm.triangles,textured_batches);
+        XIQM_ANDROID_LOG("DRAWN model=%s triangles=%u textured_batches=%u ADS_source_y=%.3f correction_y=%.3f correction_z=%.3f",
+                         xiqm.model,xiqm.triangles,textured_batches,
+                         xiqm.ads_amplitude_y,xiqm.ads_delta_y,xiqm.ads_delta_z);
         xiqm.first_draw_logged=1;
     }
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
