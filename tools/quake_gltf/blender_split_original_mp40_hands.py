@@ -139,6 +139,20 @@ if not (120<=len(selected)<=550 and len(rejected)>=200):
 if len(uncertain)>int(.10*nt) or np.quantile(normalized,.90)>.075:
     raise RuntimeError("NZP_HANDS_RED proximity ambiguity requires review "+
                        repr((len(uncertain),float(np.quantile(normalized,.90)))))
+# Verify the selected HAND vertices, not just the full original weapon,
+# actually change across QuakeC's published MP40 reload frames 4..31.
+# Quake frame indices are zero-based; the real authoring timeline is preserved.
+hand_vertex_ids=sorted({idx for i in selected for idx in faces[i][1:]})
+ref_pose=frames[3]
+moving_vertices=0
+for vid in hand_vertex_ids:
+    base_pose=ref_pose[28+vid*4:32+vid*4]
+    if any(frames[k][28+vid*4:32+vid*4]!=base_pose for k in range(4,31)):
+        moving_vertices+=1
+moving_fraction=moving_vertices/len(hand_vertex_ids)
+if moving_fraction<.15:
+    raise RuntimeError("NZP_HANDS_RED original hand mesh is static through reload: "+
+                       repr((moving_vertices,len(hand_vertex_ids),moving_fraction)))
 face_blob=b"".join(tri_section[16*i:16*(i+1)] for i in selected)
 header=bytearray(raw[:84])
 struct.pack_into("<I",header,64,len(selected))
@@ -159,6 +173,9 @@ report={
  "nearest_centroid_error_p90_bbox":float(np.quantile(normalized,.90)),
  "source_authored_hand_triangles":hand_id,
  "source_authored_gun_triangles":gun_id,
+ "hand_reloading_animated_vertex_count":moving_vertices,
+ "hand_animated_vertex_fraction_during_reload":moving_fraction,
+ "hand_animates_from_original_authored_46_frames":True,
  "all_46_source_pose_bytes_preserved":True,
  "skins_and_vertex_uvs_unchanged":True,
  "runtime_renderer_enabled":False,"visual_fidelity_verified":False}
