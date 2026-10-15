@@ -59,17 +59,20 @@ def weapon_source_frames(path, weapon):
     get_ads=re.search(r'vector GetWeaponADSOfs\s*\(float wep\)\s*=.*?(?=float\(float wep, float frametype)',src,re.S)
     get_frames=re.search(r'float\(float wep, float frametype.*?GetFrame\s*=.*?(?=string\(float wep|float\(float wep)',src,re.S)
     if not get_ads or not get_frames: raise ValueError("QuakeC ADS/frame functions absent")
-    def block(section):
-        # In each switch, share the fallthrough block with closely grouped weapon aliases.
+    def block(section, ending="break"):
+        # QuakeC ADS directly RETURNS; GetFrame uses a nested switch and BREAK.
         matches=list(re.finditer(r'case\s+W_[A-Z0-9_]+\s*:',section))
         target=next((i for i,m in enumerate(matches) if m.group().split()[1][:-1]==weapon),None)
         if target is None: raise ValueError("Missing weapon "+weapon)
-        # Stop at next actual break, skipping grouped case labels.
         tail=section[matches[target].start():]
+        if ending=="return":
+            m=re.search(r'return\s*\[[^;]*\]\s*;',tail)
+            if not m:raise ValueError("No direct ADS return for "+weapon)
+            return tail[:m.end()]
         end=tail.find("break;")
-        if end<0: raise ValueError("Unterminated weapon block "+weapon)
+        if end<0: raise ValueError("Unterminated frame block "+weapon)
         return tail[:end]
-    ads=block(get_ads.group())
+    ads=block(get_ads.group(),ending="return")
     numbers=re.search(r'return\s*\[\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\]',ads)
     if not numbers:raise ValueError("ADS offsets not numeric for "+weapon)
     # QuakeC: offset [0] = raw barrel lateral, [1] = vertical, [2] = forward.
