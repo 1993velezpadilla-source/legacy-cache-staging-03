@@ -1,0 +1,49 @@
+name: Quake Vril IQM Runtime Compile
+on:
+  pull_request:
+    paths:
+      - 'tools/quake_gltf/**'
+      - '.github/workflows/quake-vril-iqm-runtime.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vril-sdl-linux-compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Vril SDL dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libsdl2-dev libsdl2-mixer-dev libgl1-mesa-dev libglu1-mesa-dev libpng-dev libjpeg-dev
+      - name: Checkout pinned official Vril Engine
+        run: |
+          git clone --depth 1 https://github.com/nzp-team/vril-engine.git vengine
+          cd vengine
+          git fetch --depth 1 origin b1a28230d197dad2bbf4bff4141ade460982b0cb
+          git checkout --detach b1a28230d197dad2bbf4bff4141ade460982b0cb
+      - name: Patch Vril IQM sidecar renderer
+        run: |
+          python3 tools/quake_gltf/patch_vril_iqm.py vengine
+          python3 tools/quake_gltf/patch_vril_iqm.py vengine
+          grep -q 'Xziel_IQM_DrawViewModel' vengine/source/platform/sdl/gl/gl_rmain.c
+          grep -q 'xziel_iqm_viewmodels' vengine/source/platform/sdl/gl/gl_xziel_iqm_viewmodel.c
+      - name: Compile and link Vril SDL renderer
+        run: |
+          make -C vengine -f Makefile.sdl -j2 WERROR=0
+          test -x vengine/build/sdl/nzportable
+      - name: Preserve runtime patch source for diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vril-iqm-runtime-patch
+          path: |
+            vengine/source/platform/sdl/gl/gl_xziel_iqm_viewmodel.c
+            vengine/source/platform/sdl/gl/gl_rmain.c
+            vengine/source/platform/sdl/gl/gl_model.c
+          if-no-files-found: warn
+          retention-days: 7

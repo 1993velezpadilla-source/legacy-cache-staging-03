@@ -1,0 +1,111 @@
+name: Quake GLB + IQM Conversion Gauntlet
+on:
+  pull_request:
+    paths:
+      - 'tools/quake_gltf/**'
+      - '.github/workflows/quake-gltf-preflight.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-structural-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read-only GLB and IQM test suite
+        run: cd tools/quake_gltf && python3 -m unittest discover -v
+
+  actual-fte-iqm-conversion:
+    # This is a host toolchain test, NOT a Vril/Android render or APK test.
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    needs: python-structural-tests
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpng-dev libjpeg-dev
+      - name: Build FTEQW full iqmtool (supports GLB)
+        run: |
+          git clone -q https://github.com/fte-team/fteqw.git --depth=1 --filter=blob:none fteqw
+          cd fteqw
+          git fetch --depth=1 origin f937b9d88f71fc4429db5fe56c6a98d922711b2e
+          git checkout --detach f937b9d88f71fc4429db5fe56c6a98d922711b2e
+          cd ..
+          cmake -S fteqw -B fte-build -DCMAKE_BUILD_TYPE=Release -DFTE_TOOL_IQM=ON \
+            -DFTE_ENGINE=OFF -DFTE_ENGINE_CLIENT_ONLY=OFF -DFTE_ENGINE_SERVER_ONLY=OFF \
+            -DFTE_CSADDON=OFF -DFTE_MENU_SYS=OFF \
+            -DFTE_PLUG_BULLET=OFF -DFTE_PLUG_CEF=OFF -DFTE_PLUG_EZHUD=OFF -DFTE_PLUG_FFMPEG=OFF \
+            -DFTE_PLUG_HL2=OFF -DFTE_PLUG_IRC=OFF -DFTE_PLUG_MPQ=OFF -DFTE_PLUG_NAMEMAKER=OFF \
+            -DFTE_PLUG_ODE=OFF -DFTE_PLUG_OPENSSL=OFF -DFTE_PLUG_OPENXR=OFF -DFTE_PLUG_QI=OFF \
+            -DFTE_PLUG_QUAKE3=OFF -DFTE_PLUG_TERRAINGEN=OFF -DFTE_PLUG_TIMIDITY=OFF \
+            -DFTE_PLUG_X11SV=OFF -DFTE_PLUG_XMPP=OFF -DFTE_PLUG_MODELS=OFF \
+            -DFTE_TOOL_HTTPSV=OFF -DFTE_TOOL_IMAGE=OFF -DFTE_TOOL_MASTER=OFF -DFTE_TOOL_QCC=OFF \
+            -DFTE_TOOL_QCCGUI=OFF -DFTE_TOOL_QTV=OFF
+          cmake --build fte-build --target iqmtool -j 2
+          test -x fte-build/iqmtool
+      - name: Download two upstream GLB test fixtures (not proprietary game content)
+        run: |
+          mkdir -p work
+          curl --fail --location --retry 3 --silent --show-error -o work/RiggedSimple.glb \
+            https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/RiggedSimple/glTF-Binary/RiggedSimple.glb
+          curl --fail --location --retry 3 --silent --show-error -o work/BoxAnimated.glb \
+            https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/BoxAnimated/glTF-Binary/BoxAnimated.glb
+      - name: Download licensed Quaternius rigged human GLB from XZIEL source repository
+        run: |
+          curl --fail --location --retry 3 --silent --show-error -o work/QuaterniusHuman.glb \
+            https://raw.githubusercontent.com/1993velezpadilla-source/config-old-3/751c98b6aab15dbf9d071e83179868bc8d839ce9/assets/character_bases/quaternius-human-rigged/model.glb
+          echo 'ce4d543e82e455d5a1253798c9759f12b9eec74929ddbca464447eeaa3a42c5d  work/QuaterniusHuman.glb' | sha256sum --check
+      - name: Generate a 20K triangle GLB model (no decimation)
+        run: python3 tools/quake_gltf/generate_dense_glb.py
+      - name: GLB to IQM conversion and geometry/skin/animation parity
+        run: |
+          set -euxo pipefail
+          for item in RiggedSimple BoxAnimated Synthetic20K QuaterniusHuman; do
+            python3 tools/quake_gltf/preflight.py "work/$item.glb" | tee "work/$item.source.json"
+            ./fte-build/iqmtool "work/$item.iqm" "work/$item.glb"
+            test -s "work/$item.iqm"
+            python3 tools/quake_gltf/inspect_iqm.py "work/$item.iqm" --source-glb "work/$item.glb" | tee "work/$item.parity.json"
+          done
+      - name: Verify triangle area and a globally consistent Quake winding convention
+        run: |
+          set -euo pipefail
+          python3 tools/quake_gltf/geometry_parity.py work/Synthetic20K.glb work/Synthetic20K.iqm | tee work/Synthetic20K.geometry.json
+          # Deliberately corrupt winding on 10% of faces; guard MUST reject.
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          raw=bytearray(Path('work/Synthetic20K.iqm').read_bytes())
+          tri_count=struct.unpack_from('<I',raw,56)[0]
+          ofs=struct.unpack_from('<I',raw,60)[0]
+          for i in range(0,tri_count,10):
+              first,second=struct.unpack_from('<II',raw,ofs+12*i)
+              struct.pack_into('<II',raw,ofs+12*i,second,first)
+          Path('work/BadWinding.iqm').write_bytes(raw)
+          PY
+          if python3 tools/quake_gltf/geometry_parity.py work/Synthetic20K.glb work/BadWinding.iqm > work/BadWinding.result.json; then
+             echo 'GUARD FAILED: mixed-winding fixture incorrectly accepted'
+             exit 1
+          fi
+          echo 'WINDING_GUARD_NEGATIVE_TEST_GREEN'
+      - name: Compile and execute skeletal IQM pose decoder on real converted models
+        run: |
+          cc -std=c99 -Wall -Wextra -Werror -O2 -o work/test_iqm_skeleton tools/quake_gltf/test_iqm_animation.c -lm
+          work/test_iqm_skeleton work/RiggedSimple.iqm | tee work/RiggedSimple.skeleton.log
+          work/test_iqm_skeleton work/BoxAnimated.iqm | tee work/BoxAnimated.skeleton.log
+          work/test_iqm_skeleton work/QuaterniusHuman.iqm | tee work/QuaterniusHuman.skeleton.log
+      - name: Preserve conversion logs and IQM fixtures for diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: glb-iqm-diagnostic-output
+          path: work/
+          if-no-files-found: warn
+          retention-days: 7

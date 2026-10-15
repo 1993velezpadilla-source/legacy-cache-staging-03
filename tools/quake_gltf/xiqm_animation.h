@@ -1,0 +1,124 @@
+/* IQM2 skeletal evaluator for optional XZIEL preview; GPL-2.0-or-later */
+#ifndef XZIEL_IQM_ANIMATION_H
+#define XZIEL_IQM_ANIMATION_H
+#include "xiqm_matrix.h"
+#define XZA_BONES 128u
+#define XZA_CLIPS 64u
+#define XZA_FRAMES 8192u
+typedef struct {int parent;float v[10];} xzjoint;
+typedef struct {int parent;unsigned mask;float offset[10],scale[10];} xzpose;
+typedef struct {char name[80];unsigned first,count,flags;float fps;} xzclip;
+typedef struct {
+ unsigned joints,poses,clips,frames,channels;
+ xzjoint joint[XZA_BONES];xzpose pose[XZA_BONES];xzclip clip[XZA_CLIPS];
+ xzmatrix inverse[XZA_BONES],skin[XZA_BONES];
+ uint16_t *samples;int weighted;
+} xzanim;
+static void xza_clear(xzanim *a){free(a->samples);memset(a,0,sizeof(*a));}
+static int xza_load(xzanim *a,const unsigned char *buf,size_t len){
+ unsigned n=xiqm_u32(buf+68), jo=xiqm_u32(buf+72);
+ unsigned poses=xiqm_u32(buf+76),po=xiqm_u32(buf+80);
+ unsigned clips=xiqm_u32(buf+84),co=xiqm_u32(buf+88);
+ unsigned frames=xiqm_u32(buf+92),channels=xiqm_u32(buf+96),fo=xiqm_u32(buf+100);
+ unsigned text_count=xiqm_u32(buf+28),to=xiqm_u32(buf+32);
+ unsigned i,k,total=0;
+ xzmatrix world[XZA_BONES],local;
+ if(n>XZA_BONES||poses>XZA_BONES||clips>XZA_CLIPS||frames>XZA_FRAMES||
+    channels>1280||!xiqm_span(len,jo,n,48)||
+    !xiqm_span(len,po,poses,88)||!xiqm_span(len,co,clips,20)||
+    /* Static IQM may declare zero frames and zero channels. A zero stride\n     * is not an invalid IQM; it simply has no animation sample section. */
+    (frames ? (!channels || !xiqm_span(len,fo,frames,channels*2)) : channels!=0)||
+    !xiqm_span(len,to,text_count,1))return 0;
+ if(!frames||!n||poses!=n||!clips)return 1;
+ a->joints=n;a->poses=poses;a->clips=clips;a->frames=frames;a->channels=channels;
+ for(i=0;i<n;i++){
+    const unsigned char *p=buf+jo+i*48;
+    xzjoint *j=&a->joint[i];
+    j->parent=(int32_t)xiqm_u32(p+4);
+    if(j->parent>=(int)i||j->parent< -1)return 0;
+    for(k=0;k<10;k++)j->v[k]=xiqm_f32(p+8+4*k);
+    if(!xzm_trs(&local,j->v))return 0;
+    if(j->parent>=0)xzm_mul(&world[i],&world[j->parent],&local);
+    else world[i]=local;
+    if(!xzm_inv(&a->inverse[i],&world[i]))return 0;
+ }
+ for(i=0;i<poses;i++){
+    const unsigned char *p=buf+po+i*88;
+    xzpose *dst=&a->pose[i];
+    dst->parent=(int32_t)xiqm_u32(p);
+    dst->mask=xiqm_u32(p+4);
+    if(dst->mask&~1023u||dst->parent!=a->joint[i].parent)return 0;
+    for(k=0;k<10;k++){
+        dst->offset[k]=xiqm_f32(p+8+4*k);
+        dst->scale[k]=xiqm_f32(p+48+4*k);
+        if(!isfinite(dst->offset[k])||!isfinite(dst->scale[k]))return 0;
+        if(dst->mask&(1u<<k))total++;
+    }
+ }
+ if(total!=channels)return 0;
+ for(i=0;i<clips;i++){
+    const unsigned char *p=buf+co+i*20;
+    const char *name=xiqm_name(buf+to,text_count,xiqm_u32(p));
+    xzclip *clip=&a->clip[i];
+    if(!name)return 0;
+    xiqm_strncpy(clip->name,sizeof(clip->name),name);
+    clip->first=xiqm_u32(p+4);clip->count=xiqm_u32(p+8);
+    clip->fps=xiqm_f32(p+12);clip->flags=xiqm_u32(p+16);
+    if(clip->first>frames||clip->count>frames-clip->first||
+       !clip->count||!isfinite(clip->fps)||clip->fps<=0)return 0;
+ }
+ if(channels){
+    size_t count=(size_t)frames*channels;
+    a->samples=(uint16_t*)malloc(count*sizeof(uint16_t));
+    if(!a->samples)return 0;
+    for(i=0;i<count;i++){
+        const unsigned char *p=buf+fo+2*i;
+        a->samples[i]=(uint16_t)(p[0]|((unsigned)p[1]<<8));
+    }
+ }
+ return 1;
+}
+static int xza_decode(const xzanim *a,unsigned frame,float out[XZA_BONES][10]){
+ unsigned i,k,pos=0;
+ if(frame>=a->frames||a->poses!=a->joints)return 0;
+ for(i=0;i<a->poses;i++){
+    const xzpose *p=&a->pose[i];
+    for(k=0;k<10;k++){
+        float v=p->offset[k];
+        if(p->mask&(1u<<k)){
+            if(pos>=a->channels||!a->samples)return 0;
+            v+=a->samples[(size_t)frame*a->channels+pos++]*p->scale[k];
+        }
+        out[i][k]=v;
+    }
+ }
+ return pos==a->channels;
+}
+/* Explicit preview clip; never infer QuakeC event timing from this clock. */
+static int xza_eval(xzanim *a,unsigned clip_id,float seconds){
+ float f,alpha,first[XZA_BONES][10],second[XZA_BONES][10],v[10];
+ xzmatrix world[XZA_BONES],local;
+ unsigned j,k,p,q;
+ const xzclip *c;
+ if(clip_id>=a->clips||!a->weighted||!isfinite(seconds))return 0;
+ c=&a->clip[clip_id];
+ f=fmaxf(0,seconds)*c->fps;
+ if(c->flags&1)f=fmodf(f,c->count);
+ else f=fminf(f,c->count-1);
+ p=(unsigned)f;alpha=f-p;q=p+1;
+ if(q>=c->count)q=(c->flags&1)?0:p;
+ if(!xza_decode(a,c->first+p,first)||!xza_decode(a,c->first+q,second))return 0;
+ for(j=0;j<a->joints;j++){
+    int parent=a->pose[j].parent;
+    float dot=0,sign=1;
+    for(k=3;k<7;k++)dot+=first[j][k]*second[j][k];
+    if(dot<0)sign=-1;
+    for(k=0;k<10;k++)v[k]=first[j][k]+alpha*((k>=3&&k<7?sign:1)*second[j][k]-first[j][k]);
+    if(!xzm_trs(&local,v))return 0;
+    if(parent>=0)xzm_mul(&world[j],&world[parent],&local);
+    else world[j]=local;
+    xzm_mul(&a->skin[j],&world[j],&a->inverse[j]);
+ }
+ return 1;
+}
+#endif

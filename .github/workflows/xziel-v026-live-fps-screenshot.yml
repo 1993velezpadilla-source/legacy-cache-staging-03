@@ -1,0 +1,144 @@
+name: XZIEL v026 REAL Dead Cell FPS + Developer Screenshot
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/xziel-v026-live-fps-screenshot.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  screenshot-real-gameplay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 43
+    env:
+      ANDROID_AVD_HOME: ${{ github.workspace }}/.android-avd
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download SAME-COMMIT v0.26 MP40 APK, reject obsolete screenshots
+        shell: bash
+        env:
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          WORKFLOW=xziel-v026-deadcell-dev-iqm-mp40.yml
+          NAME=XZIEL-v026-DeadCell-DEV-MP40-IQM-APK
+          RUN_ID=''
+          READY=0
+          for attempt in $(seq 1 180); do
+            RUN_ID="$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW/runs" \
+              -f head_sha="$CI_HEAD_SHA" -f per_page=20 \
+              --jq '.workflow_runs | sort_by(.run_number) | reverse | .[0].id // empty')"
+            if [ -n "$RUN_ID" ]; then
+              actual_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.head_sha')"
+              if [ "$actual_sha" != "$CI_HEAD_SHA" ]; then
+                echo "WRONG_APK_SHA $actual_sha expected $CI_HEAD_SHA"; exit 1
+              fi
+              count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+                --jq ".artifacts | map(select(.name==\"$NAME\" and .expired==false)) | length")"
+              if [ "$count" = 1 ]; then READY=1; break; fi
+              state="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')"
+              if [ "$state" = failure ] || [ "$state" = cancelled ] || [ "$state" = timed_out ]; then
+                echo "APK_SOURCE_BUILD_FAILED $RUN_ID conclusion=$state"; exit 1
+              fi
+              if [ "$state" = success ]; then
+                echo "NO_APK_ARTIFACT current head $CI_HEAD_SHA run $RUN_ID"; exit 1
+              fi
+            fi
+            sleep 10
+          done
+          test "$READY" = 1 || { echo "NO_SAME_SHA_APK $CI_HEAD_SHA"; exit 1; }
+          echo "CI_HEAD_SHA=$CI_HEAD_SHA RUN_ID=$RUN_ID" | tee dist/apk-source.txt
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n "$NAME" -D dist
+          sha256sum dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk | tee dist/apk.sha256
+          test -s dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk
+      - name: Install Android emulator and system image
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          "$SDKMANAGER" "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
+      - name: Screenshot FIRST LIVE FPS frame before zombies kill unattended player
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_AVD_HOME"
+          AVDMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name avdmanager | sort -V | tail -n 1)"
+          printf 'no\n' | "$AVDMANAGER" create avd --force --name xziel-v026-livefps \
+            --package 'system-images;android-35;google_apis;x86_64' --device pixel_6
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm || true; fi
+          nohup "$ANDROID_HOME/emulator/emulator" @xziel-v026-livefps \
+            -no-window -no-snapshot -no-audio -no-boot-anim \
+            -gpu swiftshader_indirect -memory 2048 > dist/emulator.log 2>&1 &
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          timeout 180 "$ADB" wait-for-device
+          READY=0
+          for i in $(seq 1 90); do
+            if [ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then READY=1; break; fi
+            sleep 2
+          done
+          test "$READY" = 1
+          "$ADB" install -r dist/XZIEL-v026-DeadCell-DEV-MP40-IQM.apk
+          "$ADB" shell settings put secure immersive_mode_confirmations confirmed || true
+          "$ADB" logcat -c
+          "$ADB" shell am start -W -n \
+             com.xziel.deadcell.iqmdev/org.libsdl.app.NZPActivity \
+             --es xziel_ci_map xziel_proto | tee dist/launch.txt
+          FOUND=0
+          for i in $(seq 1 60); do
+            if "$ADB" logcat -d -s XZIEL_IQM:I '*:S' 2>/dev/null | \
+              grep -q 'DRAWN model=models/weapons/mp40/v_mp40.mdl triangles=14450'; then
+              FOUND=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$FOUND" != 1 ]; then
+            echo "FAIL: MP40 not rendered before screenshot"
+            "$ADB" logcat -d -v threadtime > dist/logcat.txt || true
+            exit 1
+          fi
+          # Capture early during active round, rather than GAME OVER at +40s.
+          sleep 1
+          "$ADB" exec-out screencap -p > dist/v026-DeadCell-real-MP40-live-FPS.png
+          sleep 3
+          "$ADB" exec-out screencap -p > dist/v026-DeadCell-real-MP40-live-FPS-2.png
+          "$ADB" logcat -d -v threadtime > dist/logcat.txt
+          "$ADB" shell run-as com.xziel.deadcell.iqmdev cat files/nzp-runtime/.xziel-stage \
+            > dist/stage.txt 2>/dev/null || true
+          grep -q FIRST_FRAME_OK dist/stage.txt
+          grep -q 'XZIEL_IQM.*DRAWN model=models/weapons/mp40/v_mp40.mdl triangles=14450 textured_batches=2' dist/logcat.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          from struct import unpack_from
+          for p in sorted(Path("dist").glob("*.png")):
+              b=p.read_bytes()
+              assert b.startswith(b"\x89PNG\r\n\x1a\n"),p
+              w,h=unpack_from(">II",b,16)
+              assert w>=800 and h>=480,(p,w,h)
+              print("FPS_REAL_SCREENSHOT_CAPTURED",p,w,h,len(b))
+          PY
+      - name: Upload live first-person gameplay screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: XZIEL-v026-DEADCELL-REAL-FPS-VISUAL-QA
+          path: |
+            dist/*.png
+            dist/logcat.txt
+            dist/stage.txt
+            dist/launch.txt
+            dist/emulator.log
+            dist/apk-source.txt
+            dist/apk.sha256
+          if-no-files-found: warn
+          retention-days: 14
